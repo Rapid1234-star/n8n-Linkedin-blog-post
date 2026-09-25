@@ -1,0 +1,2177 @@
+{
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "e007d56e-0651-4aad-aba4-021c64632b25",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        36832,
+        -8300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://your-website.com/blog-feed.xml",
+        "options": {}
+      },
+      "id": "aa3ec2b4-8464-4b59-a04d-3e1670a738f6",
+      "name": "RSS Read",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.1,
+      "position": [
+        37056,
+        -8300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2500
+    },
+    {
+      "parameters": {
+        "jsCode": "const itemsIn = $input.all();\nif (!itemsIn.length) throw new Error('No RSS items were returned from the feed.');\n\nconst stripHtml = (text) => String(text || '')\n  .replace(/<[^>]*>/g, ' ')\n  .replace(/&nbsp;/gi, ' ')\n  .replace(/&amp;/g, '&')\n  .replace(/&lt;/g, '<')\n  .replace(/&gt;/g, '>')\n  .replace(/\\s+/g, ' ')\n  .trim();\n\nconst normalized = itemsIn.map((item, index) => {\n  const j = item.json || {};\n  const enclosure = j.enclosure || {};\n  const rawSummary = j.contentSnippet || j.content || j.description || '';\n  const latestGuid = String(j.guid || j.id || '').trim();\n  const latestLink = String(j.link || j.url || '').trim();\n  const cleanSummary = stripHtml(rawSummary);\n  const shortSummary = cleanSummary.length > 600 ? cleanSummary.slice(0, 597) + '...' : cleanSummary;\n  return {\n    latestTitle: String(j.title || '').trim(),\n    latestLink,\n    latestGuid,\n    latestPubDate: j.pubDate || j.isoDate || '',\n    latestCreator: j.creator || j['dc:creator'] || '',\n    imageUrl: enclosure.url || '',\n    imageType: enclosure.type || '',\n    previewSummary: shortSummary,\n    dedupeKey: latestGuid || latestLink,\n    rssIndex: index\n  };\n}).filter(item => item.latestTitle && item.latestLink && item.dedupeKey);\n\nnormalized.sort((a, b) => new Date(b.latestPubDate || 0) - new Date(a.latestPubDate || 0));\nif (!normalized.length) throw new Error('RSS feed items are missing title, link, or dedupe key after normalization.');\n\nconst testMode = true; // CHANGE ONLY THIS: true = preview only, false = allow real post path\nconst aiMode = 'auto'; // CHANGE ONLY THIS: 'auto' = Groq then Ollama fallback; 'groq' = Groq then Ollama fallback; 'ollama' = Ollama only\nconst postAsOrg = true; // CHANGE ONLY THIS: true = company page, false = personal account\nconst imageGenEnabled = true; // CHANGE ONLY THIS: true = Cloudflare branded image, false = existing RSS image only\nconst linkedInPersonUrn = 'YOUR_PERSONAL_URN'; // CHANGE THIS ONCE: your personal LinkedIn URN\nconst linkedInOrgUrn = 'YOUR_COMPANY_URN'; // CHANGE THIS ONCE: your LinkedIn company page ID\n\nconst companyNameOverride = ''; // Optional: set this when the blog domain does not match the company name\nconst deriveCompanyName = (link) => {\n  try {\n    const host = new URL(String(link || '')).hostname.replace(/^www\\./i, '');\n    const parts = host.split('.').filter(Boolean);\n    const skip = new Set(['blog', 'blogs', 'news', 'www', 'feed', 'rss']);\n    let label = parts[0] || '';\n    if (skip.has(label.toLowerCase()) && parts.length > 1) label = parts[1];\n    if (!label) return '';\n    return label.charAt(0).toUpperCase() + label.slice(1);\n  } catch {\n    return '';\n  }\n};\nconst sampleLink = normalized[0]?.latestLink || '';\nconst companyWebsite = (() => {\n  try {\n    return new URL(sampleLink).hostname.replace(/^www\\./i, '');\n  } catch {\n    return '';\n  }\n})();\nconst companyName = String(companyNameOverride || '').trim() || deriveCompanyName(sampleLink) || 'Your Company';\nconst profileName = companyName;\nconst sourceFeed = (() => {\n  try {\n    return new URL(sampleLink).origin;\n  } catch {\n    return '';\n  }\n})();\nconst authorUrn = postAsOrg\n  ? `urn:li:organization:${linkedInOrgUrn}`\n  : `urn:li:person:${linkedInPersonUrn}`;\nconst postNow = !testMode;\n\nreturn [{ json: {\n  allItems: normalized,\n  rssItemCount: normalized.length,\n  testMode,\n  postNow,\n  imageGenEnabled,\n  linkedInPersonUrn,\n  linkedInOrgUrn,\n  postAsOrg,\n  authorUrn,\n  status: testMode ? 'LIVE_TEST_READY' : 'LIVE_POST_READY',\n  workflowPhase: testMode ? 'PREVIEW_ONLY' : 'READY_TO_POST',\n  sourceFeed,\n  companyName,\n  profileName,\n  companyWebsite,\n  previewProfileLabel: testMode ? 'Preview mode' : 'Posting mode',\n  aiMode,\n  groqModel: 'openai/gpt-oss-120b',\n  ollamaModel: 'qwen2.5:7b',\n  generatedAt: '',\n  aiProvider: aiMode === 'ollama' ? 'ollama' : 'groq',\n  approvalStatus: testMode ? 'preview_only' : 'post_allowed',\n  nextAction: testMode\n    ? 'Preview mode is ON. The workflow will scan the RSS feed newest-first, pick the first item not yet in the dedupe log, and stop at the browser preview. Switch testMode to false when you want the post path.'\n    : 'Posting mode is ON. The workflow will scan newest-first, pick the first unposted item, and then continue to LinkedIn posting.'\n}}];"
+      },
+      "id": "16ca1f4a-5b26-419b-a548-5a5a5f5a82b8",
+      "name": "Prepare Blog Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        37280,
+        -8300
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "8fd40345-7297-47ea-8d75-eb326bc535c4",
+      "name": "Google Sheets Read Dedupe",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        37504,
+        -8300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2500,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = $items('Prepare Blog Data', 0, 0)[0].json;\nconst rows = $input.all().map(i => i.json || {});\nconst allItems = Array.isArray(source.allItems) ? source.allItems : [];\nif (!allItems.length) throw new Error('Prepare Blog Data did not provide any normalized RSS items.');\n\nconst postedKeys = new Set(\n  rows\n    .filter((row) => String(row.processedAt || '').trim() !== '')\n    .map((row) => String(row.dedupeKey || '').trim())\n    .filter(Boolean)\n);\n\nconst selectedItem = allItems.find((item) => !postedKeys.has(String(item.dedupeKey || '').trim())) || null;\nconst allAlreadyPosted = !selectedItem;\nconst selectedKey = selectedItem ? String(selectedItem.dedupeKey || '').trim() : '';\n\nconst deriveCompanyName = (link) => {\n  try {\n    const host = new URL(String(link || '')).hostname.replace(/^www\\./i, '');\n    const parts = host.split('.').filter(Boolean);\n    const skip = new Set(['blog', 'blogs', 'news', 'www', 'feed', 'rss']);\n    let label = parts[0] || '';\n    if (skip.has(label.toLowerCase()) && parts.length > 1) label = parts[1];\n    if (!label) return '';\n    return label.charAt(0).toUpperCase() + label.slice(1);\n  } catch {\n    return '';\n  }\n};\nconst companyWebsiteFromLink = (link) => {\n  try {\n    return new URL(String(link || '')).hostname.replace(/^www\\./i, '');\n  } catch {\n    return '';\n  }\n};\n\nreturn [{ json: {\n  ...(selectedItem || {}),\n  allItems,\n  rssItemCount: Number(source.rssItemCount || allItems.length),\n  postedKeyCount: postedKeys.size,\n  allAlreadyPosted,\n  alreadyPosted: false,\n  lookupMatchedKey: allAlreadyPosted ? 'ALL_ITEMS_ALREADY_POSTED' : '',\n  sheetRowCount: postedKeys.size,\n  dedupeStatus: allAlreadyPosted ? 'all_already_posted' : 'new_post',\n  remainingUnpostedCount: Math.max(allItems.length - postedKeys.size, allAlreadyPosted ? 0 : 1),\n  selectedItemPosition: allAlreadyPosted ? -1 : allItems.findIndex((item) => String(item.dedupeKey || '').trim() === selectedKey),\n  testMode: Boolean(source.testMode),\n  postNow: Boolean(source.postNow),\n  linkedInPersonUrn: source.linkedInPersonUrn || '',\n  linkedInOrgUrn: source.linkedInOrgUrn || '',\n  postAsOrg: Boolean(source.postAsOrg),\n  authorUrn: source.authorUrn || '',\n  status: allAlreadyPosted ? 'ALL_FEED_ITEMS_ALREADY_POSTED' : source.status,\n  workflowPhase: source.workflowPhase || '',\n  sourceFeed: source.sourceFeed || '',\n  companyName: [source.companyName, deriveCompanyName(selectedItem && selectedItem.latestLink)].find((name) => name && !/^(your company|company)$/i.test(String(name))) || 'Your Company',\n  profileName: [source.profileName, source.companyName, deriveCompanyName(selectedItem && selectedItem.latestLink)].find((name) => name && !/^(your company|company)$/i.test(String(name))) || 'Your Company',\n  companyWebsite: source.companyWebsite || companyWebsiteFromLink(selectedItem && selectedItem.latestLink),\n  previewProfileLabel: source.previewProfileLabel || '',\n  aiMode: source.aiMode || 'auto',\n  groqModel: source.groqModel || 'openai/gpt-oss-120b',\n  ollamaModel: source.ollamaModel || 'qwen2.5:7b',\n  aiProvider: source.aiProvider || 'groq',\n  generatedAt: source.generatedAt || '',\n  approvalStatus: source.approvalStatus || 'preview_only',\n  nextAction: allAlreadyPosted\n    ? 'Every RSS item currently in the feed is already present in the Google Sheets dedupe log, so nothing new will be previewed or posted.'\n    : (source.nextAction || '')\n}}];"
+      },
+      "id": "cab0c200-4fd5-4880-8cb1-47a572a6c0a2",
+      "name": "Normalize Dedupe Lookup",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        37728,
+        -8300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "if-already-posted",
+              "leftValue": "={{ $json.allAlreadyPosted }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5ac6422f-b71a-46c1-b6b1-a7ca225426f8",
+      "name": "Already Posted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        37952,
+        -8300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s1",
+              "name": "dedupeStatus",
+              "value": "={{ $json.dedupeStatus }}",
+              "type": "string"
+            },
+            {
+              "id": "s2",
+              "name": "message",
+              "value": "Every RSS item currently available in the feed is already present in the Google Sheets dedupe log, so the workflow stopped before the LLM and LinkedIn steps.",
+              "type": "string"
+            },
+            {
+              "id": "s3",
+              "name": "dedupeKey",
+              "value": "={{ $json.dedupeKey || \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "s4",
+              "name": "lookupMatchedKey",
+              "value": "={{ $json.lookupMatchedKey }}",
+              "type": "string"
+            },
+            {
+              "id": "s5",
+              "name": "alreadyPosted",
+              "value": "={{ $json.allAlreadyPosted }}",
+              "type": "boolean"
+            },
+            {
+              "id": "s6",
+              "name": "status",
+              "value": "ALL_FEED_ITEMS_ALREADY_POSTED",
+              "type": "string"
+            },
+            {
+              "id": "s7",
+              "name": "latestTitle",
+              "value": "={{ $json.latestTitle || \"\" }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6e4098f8-5c5e-450b-98f9-9eb9e9575162",
+      "name": "Already Posted Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        38176,
+        -8396
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ `Blog: ${$json.latestTitle}\n\nSummary: ${$json.previewSummary}\n\n---\n\nIdentify the single most specific operational moment from the blog. Then write a short LinkedIn post about that moment.\n\nUse this structure:\n1. HOOK: one sharp line. Direct opinion, contrast, scenario, or question-led. Must make a specific claim about a real friction — not a neutral observation.\n2. STORY: what happens → the complication → the operational consequence.\n3. INSIGHT: why it matters or what teams often miss.\n4. QUESTION: one easy, relevant question with exactly 3 specific options (not 2). Not a broad open question.\n5. LINK + HASHTAGS: link on its own line. 7–8 topic-matched hashtags.\n\nNo overlapping content between hook, body, and caption. Every statement must be a direct observation, not a possibility. No \"can\", \"may\", \"might\", \"could\", or \"often\" as hedging words.\n\nEXAMPLE (match the composition, not the subject):\n---\nThe more locations you support, the easier it is to lose sight of an endpoint.\n\nA user reports an issue from another office, home, or customer site.\n\nBefore IT can fix it, the team needs to know which device is affected, whether it is online, and whether remote access is available.\n\nWithout that visibility, a simple support request can become a long back-and-forth. 🔍\n\nWhat is the biggest obstacle in managing remote endpoints: visibility, connectivity, or getting access to the device?\n---\n\nVOICE: Practical and direct. Short sentences. Peer-to-peer, not salesman. One clear point. Slightly opinionated.\n\nBANNED: \"significant friction\", \"crucial\", \"streamline\", \"transform\", \"breakdown in\", \"major challenge\", \"time-consuming\", \"error-prone\", \"game-changer\", \"boost productivity\", \"inefficiencies\", \"increased downtime\", \"unified view\", \"resolve issues quickly\"\n\nHASHTAGS: 7–8 tags matching the blog topic. Combine general (#ITOperations #EndpointManagement #CyberSecurity) with specific (#PatchManagement #RemoteDesktopSupport #VulnerabilityManagement).\n\nEMOJI: Exactly 1. Professional emojis like 🔍 🔧 💻 ⚡ 🔒 📡 ✅ 🛡️ — pick one that fits the topic naturally. No decorative emojis.\n\nEXACT OUTPUT FORMAT — copy this EXACT format, every string value in double quotes:\n{\n  \"hook\": \"one sentence with an emoji 🔍. Not repeated in body.\",\n  \"body\": \"STORY + INSIGHT. Does NOT include the hook or the question.\",\n  \"caption\": \"one sentence. Not repeated in body.\",\n  \"hashtags\": [\"#Tag1\", \"#Tag2\", \"#Tag3\", \"#Tag4\", \"#Tag5\", \"#Tag6\", \"#Tag7\"]\n}\n\nReturn ONLY this JSON object. No text before or after it. No extra keys. Every string must be in double quotes.\n\nNever invent a person, company, incident, or statistic. Do not claim personal experience unless it appears in the blog summary.` }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Return valid JSON only. Never copy the example. Never use a phrase from the banned list."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        38400,
+        -8056
+      ],
+      "id": "45324ada-576f-46ca-914c-c6c5c10f1a6c",
+      "name": "Generate Post - Groq",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2500,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = $items(\"Normalize Dedupe Lookup\", 0, 0)[0].json;\nlet parseStatus = 'success';\nconst llmItem = $input.first().json || {};\n\nconst normalizeWhitespace = (text) => String(text || '').replace(/\\r\\n/g, '\\n').replace(/[ \\t]+\\n/g, '\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\nconst normalizeHashtags = (value) => {\n  if (Array.isArray(value)) return value.map(v => String(v || '').trim()).filter(Boolean).map(v => v.startsWith('#') ? v : `#${v.replace(/^#+/, '')}`);\n  if (typeof value === 'string') return value.split(/[,\\s]+/).map(v => v.trim()).filter(Boolean).map(v => v.replace(/^['\\\"]|['\\\"]$/g, '')).map(v => v.startsWith('#') ? v : `#${v.replace(/^#+/, '')}`);\n  return [];\n};\nconst countWords = (text) => String(text || '').trim().split(/\\s+/).filter(Boolean).length;\nconst extractParsed = (payload) => {\n  if (!payload || typeof payload !== 'object') return null;\n  if (payload.hook || payload.body || payload.caption) return payload;\n  if (payload.output && typeof payload.output === 'object') return payload.output;\n  if (payload.json && typeof payload.json === 'object' && (payload.json.hook || payload.json.body || payload.json.caption)) return payload.json;\n  return null;\n};\nconst fallbackParseRaw = (raw) => {\n  let text = String(raw || '').trim();\n  if (!text) return null;\n  text = text.replace(/^```json\\s*/i, '').replace(/^```\\s*/i, '').replace(/\\s*```$/i, '').trim();\n  try { return JSON.parse(text); } catch (e1) {}\n  const start = text.indexOf('{');\n  const end = text.lastIndexOf('}');\n  if (start !== -1 && end !== -1 && end > start) {\n    const clipped = text.slice(start, end + 1);\n    try { return JSON.parse(clipped); } catch (e2) {}\n    try {\n      const fixed = clipped\n        .replace(/([{,]\\s*)([A-Za-z_][A-Za-z0-9_]*)(\\s*:)/g, '$1\"$2\"$3')\n        .replace(/,\\s*}/g, '}')\n        .replace(/,\\s*]/g, ']');\n      return JSON.parse(fixed);\n    } catch (e3) {}\n  }\n  return null;\n};\n\nlet parsed = extractParsed(llmItem);\nif (!parsed) {\n  parsed = fallbackParseRaw(llmItem.output || llmItem.text || llmItem.response || llmItem.completion || llmItem.content || '');\n}\nif (!parsed && typeof llmItem === 'string') {\n  parsed = fallbackParseRaw(llmItem);\n}\nparsed = parsed || {};\nif (!parsed.hook && !parsed.caption && parsed.situation) {\n  const h = typeof parsed.situation === 'object' ? String(parsed.situation.description || parsed.situation.problem || '') : String(parsed.situation || '');\n  const b = parsed.process ? (typeof parsed.process === 'object' ? String(parsed.process.discovery || parsed.process.initial_steps?.[0] || '') : String(parsed.process)) : '';\n  const p = parsed.point ? (typeof parsed.point === 'object' ? String(parsed.point.message || '') : String(parsed.point)) : '';\n  parsed.hook = h;\n  parsed.body = b;\n  parsed.caption = [h, b, p].filter(Boolean).join('\\n\\n').trim();\n  parsed.hashtags = [];\n}\n\nconst aiHook = normalizeWhitespace(parsed.hook || '');\nconst aiBody = normalizeWhitespace(parsed.body || '');\nconst aiCaption = normalizeWhitespace(parsed.caption || '');\nconst aiHashtagsArray = normalizeHashtags(parsed.hashtags);\nconst aiHashtags = aiHashtagsArray.join(' ');\nconst latestLink = String(source.latestLink || '').trim();\nconst latestTitle = String(source.latestTitle || '').trim();\n\nconst stripHashtagsFromCaption = (text) => String(text || '').replace(/(^|\\s)#\\w+/g, ' ').replace(/[ \\t]+/g, ' ').trim();\nconst ensureLink = (text) => {\n  const value = normalizeWhitespace(text);\n  if (!latestLink) return value;\n  if (value.includes(latestLink)) return value;\n  return value ? `${value}\\n\\n${latestLink}` : latestLink;\n};\n\nlet linkedInPostText = '';\nconst postParts = [];\nif (aiHook) postParts.push(aiHook);\nif (aiBody) postParts.push(aiBody);\nif (aiCaption) postParts.push(stripHashtagsFromCaption(aiCaption));\nlinkedInPostText = normalizeWhitespace(postParts.filter(Boolean).join('\\n\\n'));\nif (!linkedInPostText) linkedInPostText = '';\nif (aiHashtags) linkedInPostText = `${linkedInPostText}\\n\\n${aiHashtags}`.trim();\nlinkedInPostText = ensureLink(linkedInPostText);\nlinkedInPostText = normalizeWhitespace(linkedInPostText);\n\nconst qualityWarnings = [];\nif (!aiHook) qualityWarnings.push('Missing hook.');\nif (!aiBody) qualityWarnings.push('Missing body.');\nif (!aiCaption) qualityWarnings.push('Missing caption \\u2014 assembled from hook/body fallback.');\nif (aiHook && latestTitle && aiHook.toLowerCase() === latestTitle.toLowerCase()) qualityWarnings.push('Hook restates the article title.');\n\nconst bannedPhrases = [\n  'visit our blog',\n  'visit our post',\n  'unlock these benefits',\n  'discover how',\n  'optimize your operations',\n  'ensure your systems stay up-to-date',\n  'automation tools',\n  'without manual intervention',\n  'maintaining a secure and operational environment',\n  \"in today's fast-paced\",\n  'unprecedented complexity',\n  'growing complexity',\n  'increased complexity',\n  'major challenge',\n  'ever-growing',\n  'rapidly evolving landscape',\n  'critical importance',\n  'plays a vital role',\n  'is more important than ever',\n  'operational discipline',\n  'operational rigor',\n  'endpoint consistency',\n  'coverage consistency',\n  'visibility to action',\n  'not just a convenience',\n  'matters more than',\n  'same operational flow',\n  'stronger workflow',\n  'daunting task',\n  'like herding cats'\n];\nconst lowerCaption = String(aiCaption || linkedInPostText || '').toLowerCase();\nconst lowerHook = String(aiHook || '').toLowerCase();\nconst allCaptionText = `${aiHook} ${aiBody} ${aiCaption}`;\nconst questionCount = (allCaptionText.match(/\\?/g) || []).length;\nif (questionCount > 1) qualityWarnings.push(`Too many questions (${questionCount}; maximum 1).`);\nif (questionCount === 1) {\n  const questionIndex = aiCaption.indexOf('?');\n  const afterQuestion = questionIndex >= 0 ? aiCaption.slice(questionIndex + 1).trim() : '';\n  const nextLines = afterQuestion.split(/\\n+/).filter(Boolean).slice(0, 2).join(' ').replace(/#[A-Za-z0-9_]+/g, '').replace(/https?:\\/\\/\\S+/g, '').trim();\n  const answerSignals = /(start|focus|prioriti[sz]|identify|confirm|verify|review|assess|address|fix|patch|deploy|use|look at|the answer|teams can|it means|this means|that means|first)/i;\n  if (!nextLines || nextLines.split(/\\s+/).filter(Boolean).length < 5 || !answerSignals.test(nextLines)) qualityWarnings.push('Question is not answered with a practical insight in the next one or two lines.');\n}\nif (/\\b(unprecedented complexity|strategic approach|new reality|without compromising|ai-driven insights|navigate this storm|surge requires)\\b/i.test(allCaptionText)) qualityWarnings.push('Contains banned vague setup language.');\nif (/^(how|why|what|is|are|can|should)\\b[^\\n]*\\?/i.test(String(aiHook || ''))) qualityWarnings.push('Hook opens as a question; use a declarative insight instead.');\nconst sourceFactText = `${source.latestTitle || ''} ${source.previewSummary || ''}`.toLowerCase().replace(/\\s+/g, '');\nconst captionWithoutUrl = String(aiCaption || linkedInPostText || '').replace(latestLink, ' ');\nconst claimedNumericTokens = captionWithoutUrl.match(/(?:[$â‚¬Â£]\\s*)?\\d+(?:,\\d{3})*(?:\\.\\d+)?(?:%|\\+|k|m|b)?/gi) || [];\nconst unsupportedNumericClaims = claimedNumericTokens.filter(token => {\n  const normal = String(token).toLowerCase().replace(/\\s+/g, '');\n  if (!normal) return false;\n  return !sourceFactText.includes(normal);\n});\nif (unsupportedNumericClaims.length) qualityWarnings.push(`Review numeric claim(s) before publishing: ${unsupportedNumericClaims.join(', ')}.`);\nif (/(ensures?|guarantees?|eliminates?|prevents?|keeps? (?:zero[- ]?days?|threats?|exploits?) (?:at bay|away)|stops? (?:all )?(?:attacks?|exploits?))/i.test(`${aiHook} ${aiBody} ${aiCaption}`)) qualityWarnings.push('Possible guaranteed outcome not explicitly supported by the source.');\nconst weakHedgePattern = /\\b(can lead to|can cause|may lead to|may cause|might lead to|might cause|could lead to|could cause|could result in|can result in|helps teams|is important|is essential|in today's world|in todays world)\\b/i;\nif (weakHedgePattern.test(`${aiHook} ${aiBody} ${aiCaption}`)) qualityWarnings.push('Contains weak hedging or generic language; rewrite as a direct operational observation.');\n\nfor (const phrase of bannedPhrases) {\n  if (lowerCaption.includes(phrase) || lowerHook.includes(phrase)) {\n    qualityWarnings.push(`Contains banned generic phrase: ${phrase}.`);\n  }\n}\n\nconst hookLooksHeadline = Boolean(aiHook) && /^[A-Z][A-Za-z]+(?:\\s+[A-Z][A-Za-z]+){3,}$/.test(aiHook) && aiHook.length < 90 && !/[?!]/.test(aiHook);\nif (hookLooksHeadline) qualityWarnings.push('Hook looks like a title-case headline instead of a natural sentence, question, or statement.');\n\nconst proseOnly = String(aiCaption || linkedInPostText || '').replace(latestLink, '').replace(/#[A-Za-z0-9_]+/g, '').trim();\nconst captionWordCount = countWords(proseOnly || aiCaption || linkedInPostText);\nif (captionWordCount < 50) qualityWarnings.push(`Caption/post is short (${captionWordCount} words; target 60-130).`);\nif (captionWordCount > 160) qualityWarnings.push(`Caption/post is long (${captionWordCount} words; target 60-130).`);\nif (aiHashtagsArray.length < 5) qualityWarnings.push(`Only ${aiHashtagsArray.length} hashtags (target 5-9).`);\nif (aiHashtagsArray.length > 9) qualityWarnings.push(`Too many hashtags (${aiHashtagsArray.length}; target 5-9).`);\nif (latestLink && !linkedInPostText.includes(latestLink)) qualityWarnings.push('Article link missing from final post text.');\n\nconst sentenceList = proseOnly\n  .split(/(?<=[.!?])\\s+/)\n  .map(s => s.trim())\n  .filter(Boolean);\nconst longSentences = sentenceList.filter(s => s.split(/\\s+/).filter(Boolean).length > 28);\nif (longSentences.length) qualityWarnings.push(`Has ${longSentences.length} very long sentence(s) over 28 words.`);\n\nconst emojiMatches = (aiCaption.match(/[\\u{1F300}-\\u{1FAFF}\\u{2600}-\\u{27BF}]/gu) || []);\nif (emojiMatches.length > 3) qualityWarnings.push(`Too many emojis (${emojiMatches.length}; keep to 0-2).`);\n\nconst concreteDetailPatterns = [\n  /endpoint/i, /downtime/i, /remediation/i, /patch/i, /vulnerab/i, /support/i,\n  /access/i, /backlog/i, /resolution/i, /visibility/i, /\\d/, /exploit/i, /breach/i, /compliance/i\n];\nconst hasConcreteDetail = concreteDetailPatterns.some((pattern) => pattern.test(String(aiCaption || linkedInPostText || '')));\nif (!hasConcreteDetail) qualityWarnings.push('Missing a concrete operational detail, fact, or number from the article.');\n\nif (!aiHook && !aiBody && !aiCaption) parseStatus = 'failed';\nelse if (qualityWarnings.length) parseStatus = 'partial';\n\nreturn [{ json: {\n  ...source,\n  generatedAt: new Date().toISOString(),\n  aiHook,\n  aiBody,\n  aiHashtags,\n  aiHashtagsArray,\n  aiCaption,\n  linkedInPostText,\n  linkedInPostPreview: ['--- LINKEDIN POST PREVIEW ---', linkedInPostText, '--- END PREVIEW ---'].join('\\n'),\n  parseStatus,\n  qualityWarnings,\n  wordCount: captionWordCount,\n  characterCount: linkedInPostText.length,\n  hashtagCount: aiHashtagsArray.length,\n  status: parseStatus === 'failed' ? 'LIVE_TEST_FAILED' : 'LIVE_TEST_PREVIEW_READY',\n  nextAction: parseStatus === 'failed' ? 'Review AI output and do not post.' : 'Preview is ready. Check linkedInVisualHtml and set postNow to true only when you want to publish.'\n}}];"
+      },
+      "id": "5f68842f-3a0f-4e16-94b1-fd9ec152e04e",
+      "name": "Validate & Build Preview",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        41248,
+        -8128
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "if-parse-failed",
+              "leftValue": "={{ $json.parseStatus }}",
+              "rightValue": "failed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7ecdb7f5-8581-4986-9885-82dbc5031460",
+      "name": "Parse OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        41472,
+        -8128
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e1",
+              "name": "parseStatus",
+              "value": "={{ $json.parseStatus }}",
+              "type": "string"
+            },
+            {
+              "id": "e2",
+              "name": "message",
+              "value": "AI response could not be parsed into a LinkedIn post draft. The workflow now falls back to a safe structured draft when parsing fails.",
+              "type": "string"
+            },
+            {
+              "id": "e3",
+              "name": "latestTitle",
+              "value": "={{ $json.latestTitle }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "54a5044b-59b0-48bf-81ca-f7a44c59379b",
+      "name": "AI Parse Error Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        41696,
+        -8248
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json || {};\nreturn [{ json: {\n  latestTitle: item.latestTitle || '',\n  latestLink: item.latestLink || '',\n  latestGuid: item.latestGuid || '',\n  latestPubDate: item.latestPubDate || '',\n  latestCreator: item.latestCreator || '',\n  previewSummary: item.previewSummary || '',\n  imageUrl: item.imageUrl || '',\n  imageType: item.imageType || '',\n  dedupeKey: item.dedupeKey || '',\n  lookupMatchedKey: item.lookupMatchedKey || '',\n  sheetRowCount: Number(item.sheetRowCount || 0),\n  alreadyPosted: Boolean(item.alreadyPosted),\n  aiHook: item.aiHook || '',\n  aiBody: item.aiBody || '',\n  aiHashtags: item.aiHashtags || '',\n  aiHashtagsArray: Array.isArray(item.aiHashtagsArray) ? item.aiHashtagsArray : [],\n  aiCaption: item.aiCaption || '',\n  linkedInPostText: item.linkedInPostText || '',\n  linkedInPostPreview: item.linkedInPostPreview || '',\n  linkedInPersonUrn: item.linkedInPersonUrn || '',\n  linkedInOrgUrn: item.linkedInOrgUrn || '',\n  postAsOrg: Boolean(item.postAsOrg),\n  authorUrn: item.authorUrn || '',\n  testMode: Boolean(item.testMode),\n  postNow: Boolean(item.postNow),\n  approvalStatus: item.approvalStatus || 'preview_only',\n  status: item.status || '',\n  workflowPhase: item.workflowPhase || '',\n  dedupeStatus: item.dedupeStatus || '',\n  parseStatus: item.parseStatus || '',\n  qualityWarnings: Array.isArray(item.qualityWarnings) ? item.qualityWarnings : [],\n  wordCount: Number(item.wordCount || 0),\n  characterCount: Number(item.characterCount || 0),\n  hashtagCount: Number(item.hashtagCount || 0),\n  generatedAt: item.generatedAt || '',\n  ollamaModel: item.ollamaModel || '',\n  aiProvider: item.aiProvider || 'groq',\n  aiProviderUsed: item.aiProviderUsed || item.aiProvider || 'groq',\n  aiModelUsed: item.aiModelUsed || '',\n  fallbackTriggered: Boolean(item.fallbackTriggered),\n  fallbackReason: item.fallbackReason || null,\n  companyName: item.companyName || '',\n  profileName: item.profileName || item.companyName || '',\n  companyWebsite: item.companyWebsite || '',\n  nextAction: item.nextAction || ''\n}}];"
+      },
+      "id": "d13b96bd-2edb-4c2c-a087-a5bb6bf78078",
+      "name": "Preview Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        41696,
+        -8056
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.linkedin.com/rest/posts",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "linkedInOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "LinkedIn-Version",
+              "value": "202606"
+            },
+            {
+              "name": "X-RestLi-Protocol-Version",
+              "value": "2.0.0"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => {\n  const item = $json;\n  const linkedInPersonUrn = item.linkedInPersonUrn || 'YOUR_PERSONAL_URN';\n  const linkedInOrgUrn = item.linkedInOrgUrn || 'YOUR_COMPANY_URN';\n  const postAsOrg = Boolean(item.postAsOrg ?? true);\n  const urn = item.authorUrn || (postAsOrg ? `urn:li:organization:${linkedInOrgUrn}` : `urn:li:person:${linkedInPersonUrn}`);\n  const imageUrn = item.imageUrn || '';\n  const postText = item.linkedInPostText || '';\n  if (imageUrn) {\n    return JSON.stringify({\n      author: urn,\n      commentary: postText,\n      visibility: 'PUBLIC',\n      distribution: { feedDistribution: 'MAIN_FEED', targetEntities: [], thirdPartyDistributionChannels: [] },\n      content: { media: { altText: 'Article image', id: imageUrn } },\n      lifecycleState: 'PUBLISHED',\n      isReshareDisabledByAuthor: false\n    });\n  }\n  return JSON.stringify({\n    author: urn,\n    commentary: postText,\n    visibility: 'PUBLIC',\n    distribution: { feedDistribution: 'MAIN_FEED', targetEntities: [], thirdPartyDistributionChannels: [] },\n    lifecycleState: 'PUBLISHED',\n    isReshareDisabledByAuthor: false\n  });\n})() }}",
+        "options": {}
+      },
+      "id": "b94f9ce3-d9dd-4c26-926e-0c6bbe0394ef",
+      "name": "LinkedIn Test Post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        46656,
+        -8204
+      ],
+      "credentials": {
+        "linkedInOAuth2Api": {
+          "name": "LinkedIn account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $items('Preview Output', 0, 0)[0].json;\nreturn [{ json: {\n  dedupeKey: item.dedupeKey,\n  latestTitle: item.latestTitle,\n  latestLink: item.latestLink,\n  processedAt: new Date().toISOString()\n}}];"
+      },
+      "id": "18939b66-ff1c-4d3e-8f82-8f0b49634d8e",
+      "name": "Prepare Dedupe Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        46880,
+        -8204
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "dedupeKey": "={{ $json.dedupeKey }}",
+            "latestTitle": "={{ $json.latestTitle }}",
+            "latestLink": "={{ $json.latestLink }}",
+            "processedAt": "={{ $json.processedAt }}"
+          },
+          "schema": [
+            {
+              "id": "dedupeKey",
+              "displayName": "dedupeKey",
+              "type": "string"
+            },
+            {
+              "id": "latestTitle",
+              "displayName": "latestTitle",
+              "type": "string"
+            },
+            {
+              "id": "latestLink",
+              "displayName": "latestLink",
+              "type": "string"
+            },
+            {
+              "id": "processedAt",
+              "displayName": "processedAt",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b73c20df-a460-44ae-9b3d-c0779e94e4c1",
+      "name": "Google Sheets Append Dedupe",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        47104,
+        -8204
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2500,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f1",
+              "name": "status",
+              "value": "POSTED_TO_LINKEDIN",
+              "type": "string"
+            },
+            {
+              "id": "f2",
+              "name": "message",
+              "value": "Post was published to LinkedIn and the dedupe row was saved to Google Sheets.",
+              "type": "string"
+            },
+            {
+              "id": "f3",
+              "name": "sheetId",
+              "value": "YOUR_SHEET_ID",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3addb71b-8519-41f3-8dbe-d6600b3663ff",
+      "name": "LinkedIn Post Success Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        47328,
+        -8204
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first();\nconst item = (() => {\n  try {\n    const upstream = $items('Preview Output')[0]?.json || {};\n    return { ...upstream, ...input.json };\n  } catch {\n    return input.json || {};\n  }\n})();\nconst inputBinary = input.binary || {};\n\nconst escapeHtml = (s) => String(s || '')\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;')\n  .replace(/\"/g, '&quot;')\n  .replace(/'/g, '&#39;');\n\nconst nl2br = (s) => escapeHtml(String(s || '')).replace(/\\n/g, '<br>');\nconst hashtagsArray = Array.isArray(item.aiHashtagsArray) ? item.aiHashtagsArray.filter(Boolean) : [];\nconst hashtags = hashtagsArray.length ? hashtagsArray.join(' ') : String(item.aiHashtags || '').trim();\nconst textWithoutTags = String(item.linkedInPostText || '').replace(/\\n\\n#[A-Za-z0-9_# ]+$/m, '').trim();\nconst profileName = String(item.profileName || item.companyName || 'Company');\nconst profileLabel = String(item.previewProfileLabel || 'Preview mode');\nconst binaryImage = inputBinary?.data;\nconst embeddedBinaryUrl = binaryImage?.data ? `data:${binaryImage.mimeType || 'image/png'};base64,${binaryImage.data}` : '';\nconst imageUrl = String(item.generatedImagePreviewUrl || item.previewImageUrl || embeddedBinaryUrl || item.imageUrl || '').trim();\nconst latestLink = String(item.latestLink || '').trim();\nconst latestTitle = String(item.latestTitle || '').trim();\nconst articleHost = (() => {\n  try {\n    return new URL(latestLink).hostname.replace(/^www\\./, '');\n  } catch {\n    return String(item.companyWebsite || 'your-website.com');\n  }\n})();\n\nconst html = `<!doctype html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>LinkedIn Preview</title>\n  <style>\n    body { font-family: Arial, Helvetica, sans-serif; background: #f3f2ef; padding: 24px; margin: 0; }\n    .shell { max-width: 900px; margin: 0 auto; }\n    .note { margin: 0 auto 16px auto; width: 640px; color: #666; font-size: 12px; }\n    .card { width: 640px; margin: 0 auto; background: #fff; border: 1px solid #e0dfdc; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.08); }\n    .head { display: flex; gap: 12px; padding: 16px 16px 8px 16px; }\n    .avatar { width: 48px; height: 48px; border-radius: 50%; background: #0a66c2; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px; flex: 0 0 48px; }\n    .meta1 { font-weight: 700; color: #191919; font-size: 15px; }\n    .meta2 { color: #666; font-size: 13px; margin-top: 2px; }\n    .text { padding: 0 16px 12px 16px; color: #191919; font-size: 15px; line-height: 1.5; word-break: break-word; }\n    .tags { color: #0a66c2; font-weight: 600; margin-top: 10px; }\n    .hero { width: 100%; max-height: 360px; object-fit: cover; border-top: 1px solid #e0dfdc; border-bottom: 1px solid #e0dfdc; display: block; background:#f6f6f6; }\n    .linkcard { display: block; text-decoration: none; color: inherit; border-top: 1px solid #e0dfdc; background: #fff; }\n    .linkmeta { padding: 12px 16px 16px 16px; }\n    .linkhost { color: #666; font-size: 12px; text-transform: uppercase; margin-bottom: 6px; }\n    .linktitle { font-size: 16px; font-weight: 700; color: #191919; margin-bottom: 4px; }\n    .linkurl { font-size: 13px; color: #666; word-break: break-all; }\n    .actions { display: flex; justify-content: space-around; padding: 10px 0; border-top: 1px solid #e0dfdc; color: #666; font-size: 14px; }\n    .panel { width: 640px; margin: 16px auto 0 auto; background:#fff; border:1px solid #e0dfdc; border-radius:12px; padding:12px 16px; color:#444; font-size:13px; }\n    .panel code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:12px; }\n  </style>\n</head>\n<body>\n  <div class=\"shell\">\n    <div class=\"note\">This is a browser-rendered preview of the LinkedIn post card.</div>\n    <div class=\"card\">\n      <div class=\"head\">\n        <div class=\"avatar\">${escapeHtml(profileName.charAt(0).toUpperCase() || 'P')}</div>\n        <div>\n          <div class=\"meta1\">${escapeHtml(profileName)}</div>\n          <div class=\"meta2\">${escapeHtml(profileLabel)}</div>\n        </div>\n      </div>\n      <div class=\"text\">\n        ${nl2br(textWithoutTags)}\n        ${hashtags ? `<div class=\"tags\">${escapeHtml(hashtags)}</div>` : ''}\n      </div>\n      ${imageUrl ? `<img class=\"hero\" src=\"${escapeHtml(imageUrl)}\" alt=\"Article image\">` : ''}\n      <a class=\"linkcard\" href=\"${escapeHtml(latestLink)}\" target=\"_blank\" rel=\"noopener noreferrer\">\n        <div class=\"linkmeta\">\n          <div class=\"linkhost\">${escapeHtml(articleHost)}</div>\n          <div class=\"linktitle\">${escapeHtml(latestTitle)}</div>\n          <div class=\"linkurl\">${escapeHtml(latestLink)}</div>\n        </div>\n      </a>\n      <div class=\"actions\"><div>Like</div><div>Comment</div><div>Repost</div><div>Send</div></div>\n    </div>\n    <div class=\"panel\">\n      <div><strong>How to view:</strong> paste <code>previewBrowserUrl</code> into a browser address bar, or save <code>htmlForFile</code> as <code>linkedin-preview.html</code>.</div>\n    </div>\n  </div>\n</body>\n</html>`;\n\nconst previewBrowserUrl = imageUrl.startsWith('data:image/') ? 'Use htmlForFile or the attached preview image binary; large inline images can exceed browser data-URL limits.' : 'data:text/html;charset=utf-8,' + encodeURIComponent(html);\nconst previewSummary = [\n  `Title: ${latestTitle || '(missing title)'}`,\n  `Link: ${latestLink || '(missing link)'}`,\n  `Image: ${imageUrl || 'No image found'}`,\n  `Has image: ${imageUrl ? 'yes' : 'no'}`,\n  `Parse status: ${item.parseStatus || ''}`,\n  `Word count: ${Number(item.wordCount || 0)}`,\n  `Hashtags: ${hashtags || '(none)'}`,\n  `Mode: ${item.testMode ? 'preview only' : 'posting allowed'}`\n].join('\\n');\n\nreturn [{\n  json: {\n    ...item,\n    linkedInVisualHtml: html,\n    htmlForFile: html,\n    previewBrowserUrl,\n    linkedInPreviewMode: 'HTML_BROWSER_PREVIEW',\n    previewTitle: latestTitle,\n    previewLink: latestLink,\n    previewImageUrl: imageUrl,\n    previewHasImage: Boolean(imageUrl),\n    previewHashtags: hashtagsArray,\n    previewTextOnly: textWithoutTags,\n    previewSummary,\n    previewOpenInstructions: imageUrl.startsWith('data:image/') ? 'Save htmlForFile as linkedin-preview.html and open it locally. Download the output binary named previewHtml; it is a complete .html preview file. The generated image remains available as binary data.' : 'Open previewBrowserUrl in a browser for instant visual preview, or save htmlForFile into linkedin-preview.html and open it.',\n    previewImageDataUrl: imageUrl\n  },\n  binary: {\n    ...inputBinary,\n    previewHtml: {\n      data: Buffer.from(html, 'utf8').toString('base64'),\n      mimeType: 'text/html',\n      fileName: `linkedin-preview-${String(item.dedupeKey || Date.now()).replace(/[^a-z0-9]/gi, '-').slice(0, 80)}.html`\n    }\n  }\n}];"
+      },
+      "id": "10860cdd-4ef4-4b40-9982-025db3e8f0cd",
+      "name": "Build LinkedIn Visual Preview",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        43968,
+        -8108
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "987a8111-c20d-493c-8bc1-849275970fcd",
+              "leftValue": "={{ $json.postNow }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            },
+            {
+              "id": "704b8606-987b-47f2-b581-5db079680505",
+              "leftValue": "={{ $('Prepare Blog Data').item.json.testMode }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            },
+            {
+              "id": "da73ea43-3d21-4914-b560-2f9bd71dd049",
+              "leftValue": "={{ $json.needsHumanReview }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            },
+            {
+              "id": "211f8dca-f2c7-4522-b0c7-39cb9c67afd1",
+              "leftValue": "={{ $('Prepare Blog Data').item.json.testMode }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "ea9df6bd-9d29-4478-8734-60a33cf0f2a1",
+      "name": "Post to LinkedIn Now?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        44192,
+        -8108
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json || {};\nconst warnings = Array.isArray(item.qualityWarnings) ? item.qualityWarnings : [];\nconst humanPreview = [\n  'PREVIEW READY',\n  '',\n  `Mode: ${item.testMode ? 'preview only' : 'posting allowed'}`,\n  `Image included: ${item.previewHasImage ? 'Yes' : 'No'}`,\n  `Article title: ${String(item.previewTitle || item.latestTitle || '')}`,\n  `Article link: ${String(item.previewLink || item.latestLink || '')}`,\n  `Parse status: ${String(item.parseStatus || '')}`,\n  `Warnings: ${warnings.length ? warnings.join(' | ') : 'None'}`,\n  '',\n  'Next: open the Preview Browser Link node output.'\n].join('\\n');\n\nreturn [{ json: {\n  status: 'PREVIEW_READY_NOT_POSTED',\n  message: 'Preview completed successfully. Because testMode is true, the workflow stopped before LinkedIn posting.',\n  testMode: Boolean(item.testMode),\n  postNow: Boolean(item.postNow),\n  dedupeStatus: String(item.dedupeStatus || ''),\n  parseStatus: String(item.parseStatus || ''),\n  qualityWarnings: warnings,\n  linkedInPostText: String(item.linkedInPostText || ''),\n  previewTitle: String(item.previewTitle || item.latestTitle || ''),\n  previewLink: String(item.previewLink || item.latestLink || ''),\n  previewImageUrl: String(item.previewImageUrl || ''),\n  previewHasImage: Boolean(item.previewHasImage),\n  previewSummary: String(item.previewSummary || ''),\n  previewHumanReadable: humanPreview,\n  previewBrowserUrl: String(item.previewBrowserUrl || '')\n}, binary: $input.first().binary || {}}];"
+      },
+      "id": "41632737-4785-4d52-97d8-68b30797fe5e",
+      "name": "Preview Ready Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        44416,
+        -8012
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first();\nconst item = input.json || {};\nconst binaries = input.binary || {};\nreturn [{\n  json: {\n    openPreview: 'Download previewHtml from the Binary tab and open it in your browser for the complete rendered LinkedIn preview.',\n    previewBrowserUrl: String(item.previewBrowserUrl || ''),\n    previewHtmlDownload: binaries.previewHtml ? 'Available in this nodeâ€™s Binary tab as previewHtml (.html).' : 'Not available â€” run the image preview path first.',\n    previewImageDownload: binaries.data ? 'Available in this nodeâ€™s Binary tab as data (generated image).' : 'Not available.'\n  },\n  binary: binaries\n}];"
+      },
+      "id": "0d7f192c-7092-4670-92e9-a61dc16377b7",
+      "name": "Preview Browser Link",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        44640,
+        -8012
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "if-has-image",
+              "leftValue": "={{ /^https?:\\/\\//i.test(String($json.rssImageUrl || $json.imageUrl || \"\")) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0bcd99cf-cad0-4e9b-b692-0c921c78affa",
+      "name": "Has Image?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        45088,
+        -8132
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.rssImageUrl || $json.imageUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "f939bc7d-888d-437d-a98d-7fd9d3fa9c1c",
+      "name": "Download Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        45312,
+        -8228
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2500
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.linkedin.com/rest/images?action=initializeUpload",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "linkedInOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "LinkedIn-Version",
+              "value": "202606"
+            },
+            {
+              "name": "X-RestLi-Protocol-Version",
+              "value": "2.0.0"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ initializeUploadRequest: { owner: $json.authorUrn } }) }}",
+        "options": {}
+      },
+      "id": "1b8386e1-6a4f-445e-9016-6d1384729110",
+      "name": "Initialize LinkedIn Image Upload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        45760,
+        -8300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2500,
+      "credentials": {
+        "linkedInOAuth2Api": {
+          "name": "LinkedIn account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $json.linkedInImageUploadUrl || \"\" }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "linkedInOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "LinkedIn-Version",
+              "value": "202606"
+            },
+            {
+              "name": "X-RestLi-Protocol-Version",
+              "value": "2.0.0"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "id": "96d1c80d-903c-4a26-8ccc-b3f4e4401646",
+      "name": "Upload Image Binary to LinkedIn",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        46208,
+        -8300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2500,
+      "credentials": {
+        "linkedInOAuth2Api": {
+          "name": "LinkedIn account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const prepared = $items('Prepare Binary Upload Payload', 0, 0)?.[0]?.json || {};\nconst imageUrn = String(prepared.imageUrn || '').trim();\nif (!imageUrn) throw new Error('Prepared upload payload is missing image URN.');\nreturn [{ json: { ...prepared, imageUploadStatus: 'uploaded_to_linkedin' } }];"
+      },
+      "id": "fdf2f0be-de45-44d1-9fce-f3c64c2de805",
+      "name": "Attach LinkedIn Image URN",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        46432,
+        -8300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = $items('Preview Output', 0, 0)[0].json;\nconst linkedInPersonUrn = String(source.linkedInPersonUrn || 'YOUR_PERSONAL_URN').trim();\nconst linkedInOrgUrn = String(source.linkedInOrgUrn || 'YOUR_COMPANY_URN').trim();\nconst postAsOrg = Boolean(source.postAsOrg ?? true);\nconst authorUrn = String(source.authorUrn || (postAsOrg ? `urn:li:organization:${linkedInOrgUrn}` : `urn:li:person:${linkedInPersonUrn}`)).trim();\nreturn [{ json: { ...source, linkedInPersonUrn, linkedInOrgUrn, postAsOrg, authorUrn, imageUrn: '', imageUploadStatus: 'skipped_no_image' } }];"
+      },
+      "id": "04e26543-b2bc-4dce-bae5-b2f3554ef7f2",
+      "name": "Skip Image Upload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        46432,
+        -8060
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first() || {};\nconst binary = item.binary || {};\nconst fallbackPersonId = 'YOUR_PERSONAL_URN';\nconst fallbackOrgId = 'YOUR_COMPANY_URN';\nconst previewSource = $items('Preview Output', 0, 0)?.[0]?.json || {};\nconst currentJson = item.json || {};\nconst source = Object.keys(previewSource).length ? previewSource : currentJson;\nconst linkedInPersonUrn = String(source.linkedInPersonUrn || currentJson.linkedInPersonUrn || fallbackPersonId).trim();\nconst linkedInOrgUrn = String(source.linkedInOrgUrn || currentJson.linkedInOrgUrn || fallbackOrgId).trim();\nconst postAsOrg = Boolean(source.postAsOrg ?? currentJson.postAsOrg ?? true);\nconst authorUrn = String(\n  source.authorUrn\n  || currentJson.authorUrn\n  || (postAsOrg ? `urn:li:organization:${linkedInOrgUrn}` : `urn:li:person:${linkedInPersonUrn}`)\n).trim();\nreturn [{ json: { ...source, linkedInPersonUrn, linkedInOrgUrn, postAsOrg, authorUrn }, binary }];"
+      },
+      "id": "db1e00e3-4c1b-4f67-8301-6b3f375b4ba4",
+      "name": "Ensure LinkedIn URN Present",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        45536,
+        -8300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ensured = $items('Ensure LinkedIn URN Present', 0, 0)?.[0] || {};\nconst ensuredJson = ensured.json || {};\nconst previewSource = $items('Preview Output', 0, 0)?.[0]?.json || {};\nconst source = Object.keys(ensuredJson).length > 1 ? ensuredJson : previewSource;\nconst binary = ensured.binary || {};\nconst init = $input.first().json || {};\nconst value = init.value || {};\nconst uploadUrl = String(value.uploadUrl || init.uploadUrl || '').trim();\nconst imageUrn = String(value.image || init.image || init.imageUrn || '').trim();\nif (!uploadUrl) throw new Error('LinkedIn image upload initialization did not return an upload URL.');\nif (!imageUrn) throw new Error('LinkedIn image upload initialization did not return an image URN.');\nconst linkedInPersonUrn = String(source.linkedInPersonUrn || 'YOUR_PERSONAL_URN').trim();\nconst linkedInOrgUrn = String(source.linkedInOrgUrn || 'YOUR_COMPANY_URN').trim();\nconst postAsOrg = Boolean(source.postAsOrg ?? true);\nconst authorUrn = String(source.authorUrn || (postAsOrg ? `urn:li:organization:${linkedInOrgUrn}` : `urn:li:person:${linkedInPersonUrn}`)).trim();\nreturn [{ json: { ...source, linkedInPersonUrn, linkedInOrgUrn, postAsOrg, authorUrn, linkedInImageUploadUrl: uploadUrl, imageUrn, imageUploadInit: init }, binary }];"
+      },
+      "id": "a0d0f755-12eb-430d-b3df-5d4065805dbc",
+      "name": "Prepare Binary Upload Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        45984,
+        -8300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "={{ $('Normalize Dedupe Lookup').first().json.groqModel || 'openai/gpt-oss-120b' }}",
+        "options": {
+          "temperature": 0.5
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        38472,
+        -7832
+      ],
+      "id": "525032d9-47b2-4b8c-a5e9-3795967f285b",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst source = $(\"Normalize Dedupe Lookup\").first().json;\n\nconst candidates = [\n  ['llmRawOutput', item.llmRawOutput],\n  ['direct', item],\n  ['text', item.text],\n  ['output', item.output],\n  ['content', item.content],\n  ['completion', item.completion],\n  ['response.content', item.response?.content],\n  ['response.output_text', item.response?.output_text],\n  ['response.generations[0][0].text', item.response?.generations?.[0]?.[0]?.text],\n  ['generations[0][0].text', item.generations?.[0]?.[0]?.text],\n];\n\nfunction normalizeWhitespace(text) {\n  return String(text || '').replace(/\\r\\n/g, '\\n').replace(/[ \\t]+/g, ' ').replace(/ *\\n */g, '\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\n}\n\nfunction stripCodeFences(text) {\n  return String(text || '')\n    .replace(/^```json\\s*/i, '')\n    .replace(/^```\\s*/i, '')\n    .replace(/```$/i, '')\n    .trim();\n}\n\nfunction normalizeHashtags(value) {\n  if (Array.isArray(value)) {\n    return value.map(v => String(v || '').trim()).filter(Boolean).map(v => v.startsWith('#') ? v : '#' + v.replace(/^#+/, ''));\n  }\n  if (typeof value === 'string') {\n    return value.split(/[\\s,]+/).map(v => v.trim()).filter(Boolean).map(v => v.startsWith('#') ? v : '#' + v.replace(/^#+/, ''));\n  }\n  return [];\n}\n\nfunction tryParse(value) {\n  const fromObject = (v) => {\n    if (!v || typeof v !== 'object') return null;\n    if (v.hook || v.body || v.caption || v.hashtags) return v;\n    for (const key of ['output','json','data','response']) {\n      if (v[key] && typeof v[key] === 'object') {\n        const found = fromObject(v[key]);\n        if (found) return found;\n      }\n    }\n    return null;\n  };\n  const objectValue = fromObject(value);\n  if (objectValue) return objectValue;\n  let text = String(value || '').trim();\n  if (!text) return null;\n  const candidates = [text];\n  const firstBrace = text.indexOf('{');\n  if (firstBrace >= 0) {\n    let depth = 0, quote = false, escape = false, end = -1;\n    for (let i = firstBrace; i < text.length; i++) {\n      const ch = text[i];\n      if (quote) {\n        if (escape) escape = false;\n        else if (ch === '\\\\') escape = true;\n        else if (ch === '\"') quote = false;\n      } else if (ch === '\"') quote = true;\n      else if (ch === '{') depth++;\n      else if (ch === '}' && --depth === 0) { end = i; break; }\n    }\n    if (end > firstBrace) candidates.push(text.slice(firstBrace, end + 1));\n  }\n  const sanitizeControlsInStrings = (s) => {\n    let out = '', quote = false, escape = false;\n    for (let i = 0; i < s.length; i++) {\n      const ch = s[i];\n      if (quote && !escape) {\n        if (ch === '\\n') { out += '\\\\n'; continue; }\n        if (ch === '\\r') { out += '\\\\r'; continue; }\n        if (ch === '\\t') { out += '\\\\t'; continue; }\n      }\n      out += ch;\n      if (quote) {\n        if (escape) escape = false;\n        else if (ch === '\\\\') escape = true;\n        else if (ch === '\"') quote = false;\n      } else if (ch === '\"') quote = true;\n    }\n    return out;\n  };\n  for (const candidate of candidates) {\n    const cleaned = candidate.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```\\s*$/i, '').trim();\n    for (const attempt of [cleaned, sanitizeControlsInStrings(cleaned)]) {\n      try {\n        const parsed = JSON.parse(attempt);\n        if (parsed && typeof parsed === 'object' && (parsed.hook || parsed.body || parsed.caption || parsed.hashtags)) return parsed;\n      } catch (e) {}\n    }\n  }\n  return null;\n}\n\nfunction buildFallback(source) {\n  const title = normalizeWhitespace(source.latestTitle);\n  const rawSummary = normalizeWhitespace(source.previewSummary) || title;\n  const summary = rawSummary\n    .replace(/\\s*The post .+ appeared first on .+$/i, '')\n    .replace(/\\s*appeared first on .+$/i, '')\n    .replace(/\\s+/g, ' ')\n    .trim();\n\n  const genericName = /^(your company|company|your website)$/i;\n  let company = String(source.companyName || '').trim();\n  if (genericName.test(company)) company = '';\n  if (!company) {\n    try {\n      const host = new URL(String(source.latestLink || '')).hostname.replace(/^www\\./i, '');\n      const parts = host.split('.').filter(Boolean);\n      const skip = new Set(['blog', 'blogs', 'news', 'www', 'feed', 'rss']);\n      let label = parts[0] || '';\n      if (skip.has(label.toLowerCase()) && parts.length > 1) label = parts[1];\n      if (label) company = label.charAt(0).toUpperCase() + label.slice(1);\n    } catch (e) {}\n  }\n  const brandTag = '#' + String(company || 'Company').replace(/[^A-Za-z0-9]/g, '');\n\n  const hook = title.length <= 110 ? title : title.slice(0, 107).replace(/\\s+\\S*$/, '') + '...';\n  const body = summary && summary.toLowerCase() !== title.toLowerCase() ? summary : title;\n  const shortTitle = title.length <= 80 ? title : title.slice(0, 77).replace(/\\s+\\S*$/, '') + '...';\n  const caption = `What stood out to you in \"${shortTitle}\": the idea, the practical change, or what you would try first?`;\n\n  const stop = new Set(['the','and','for','with','how','to','a','an','of','in','on','your','from','this','that','into','about','after','before','over','under','using','use','new','why','what','when','where','who','are','is','it','its','by','at','or','as','be','can','you','we','our','app','post','blog']);\n  const tags = [];\n  const seen = new Set();\n  const pushTag = (value) => {\n    const cleaned = String(value || '').replace(/[^A-Za-z0-9]/g, '');\n    if (!cleaned) return;\n    const tag = '#' + cleaned.charAt(0).toUpperCase() + cleaned.slice(1);\n    const key = tag.toLowerCase();\n    if (seen.has(key)) return;\n    seen.add(key);\n    tags.push(tag);\n  };\n  pushTag(brandTag.replace(/^#/, ''));\n  for (const word of `${title} ${summary}`.split(/[^A-Za-z0-9]+/)) {\n    if (word.length < 4 || stop.has(word.toLowerCase())) continue;\n    pushTag(word);\n    if (tags.length >= 6) break;\n  }\n  if (tags.length < 3) pushTag('LinkedIn');\n\n  return { hook, body, caption, hashtags: tags };\n}\n\nfor (const [sourceName, value] of candidates) {\n  const parsed = tryParse(value);\n  if (parsed && (parsed.hook || parsed.body || parsed.caption || parsed.hashtags)) {\n    const out = {\n      hook: normalizeWhitespace(parsed.hook || ''),\n      body: normalizeWhitespace(parsed.body || '').replace(/\\s*\\n\\s*/g, '\\n'),\n      hashtags: normalizeHashtags(parsed.hashtags),\n      caption: String(parsed.caption || '').trim(),\n    };\n    if (!out.hashtags.length) out.hashtags = buildFallback(source).hashtags;\n    return [{ json: { ...item, ...out, llmJsonParsed: true, llmParseSource: sourceName } }];\n  }\n}\n\nconst fallback = buildFallback(source);\nreturn [{ json: { ...item, ...fallback, llmJsonParsed: false, llmParseSource: 'fallback-template', needsHumanReview: true, qualityPass: false, qualityIssues: ['Fallback template generated; review before publishing.'] } }];"
+      },
+      "id": "6128a961-9c22-4342-b58e-3bc87480ee73",
+      "name": "Parse Or Fallback LLM Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        41024,
+        -8128
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ `Blog: ${$json.latestTitle}\n\nSummary: ${$json.previewSummary}\n\n---\n\nIdentify the single most specific operational moment from the blog. Then write a short LinkedIn post about that moment.\n\nUse this structure:\n1. HOOK: one sharp line. Direct opinion, contrast, scenario, or question-led. Must make a specific claim about a real friction — not a neutral observation.\n2. STORY: what happens → the complication → the operational consequence.\n3. INSIGHT: why it matters or what teams often miss.\n4. QUESTION: one easy, relevant question with exactly 3 specific options (not 2). Not a broad open question.\n5. LINK + HASHTAGS: link on its own line. 7–8 topic-matched hashtags.\n\nNo overlapping content between hook, body, and caption. Every statement must be a direct observation, not a possibility. No \"can\", \"may\", \"might\", \"could\", or \"often\" as hedging words.\n\nEXAMPLE (match the composition, not the subject):\n---\nThe more locations you support, the easier it is to lose sight of an endpoint.\n\nA user reports an issue from another office, home, or customer site.\n\nBefore IT can fix it, the team needs to know which device is affected, whether it is online, and whether remote access is available.\n\nWithout that visibility, a simple support request can become a long back-and-forth. 🔍\n\nWhat is the biggest obstacle in managing remote endpoints: visibility, connectivity, or getting access to the device?\n---\n\nVOICE: Practical and direct. Short sentences. Peer-to-peer, not salesman. One clear point. Slightly opinionated.\n\nBANNED: \"significant friction\", \"crucial\", \"streamline\", \"transform\", \"breakdown in\", \"major challenge\", \"time-consuming\", \"error-prone\", \"game-changer\", \"boost productivity\", \"inefficiencies\", \"increased downtime\", \"unified view\", \"resolve issues quickly\"\n\nHASHTAGS: 7–8 tags matching the blog topic. Combine general (#ITOperations #EndpointManagement #CyberSecurity) with specific (#PatchManagement #RemoteDesktopSupport #VulnerabilityManagement).\n\nEMOJI: Exactly 1. Professional emojis like 🔍 🔧 💻 ⚡ 🔒 📡 ✅ 🛡️ — pick one that fits the topic naturally. No decorative emojis.\n\nEXACT OUTPUT FORMAT — copy this EXACT format, every string value in double quotes:\n{\n  \"hook\": \"one sentence with an emoji 🔍. Not repeated in body.\",\n  \"body\": \"STORY + INSIGHT. Does NOT include the hook or the question.\",\n  \"caption\": \"one sentence. Not repeated in body.\",\n  \"hashtags\": [\"#Tag1\", \"#Tag2\", \"#Tag3\", \"#Tag4\", \"#Tag5\", \"#Tag6\", \"#Tag7\"]\n}\n\nReturn ONLY this JSON object. No text before or after it. No extra keys. Every string must be in double quotes.\n\nNever invent a person, company, incident, or statistic. Do not claim personal experience unless it appears in the blog summary.` }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Return valid JSON only. Never copy the example. Never use a phrase from the banned list."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        40224,
+        -8528
+      ],
+      "id": "4b9948fe-7233-4cf9-92ed-da834d7c382b",
+      "name": "Generate Post - Ollama",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "model": "={{ $('Normalize Dedupe Lookup').first().json.ollamaModel || 'qwen2.5:7b' }}",
+        "options": {
+          "temperature": 0.25,
+          "numPredict": 3072,
+          "format": "json"
+        }
+      },
+      "id": "336faafa-d398-4c41-98b6-a45f2b4d1d90",
+      "name": "Ollama Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        40296,
+        -8304
+      ],
+      "credentials": {
+        "ollamaApi": {
+          "name": "Ollama account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "aa4f2216-2ee3-4155-82ca-5bd046f53045",
+              "leftValue": "={{ $json.aiMode }}",
+              "rightValue": "ollama",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e8ca4c5a-cc28-42cd-a70c-f6471777c6ca",
+      "name": "Ollama Only Mode?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        38176,
+        -8204
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const upstream = $('Normalize Dedupe Lookup').first().json;\nconst item = $input.first().json || {};\nconst raw = extractRaw(item) ?? item.text ?? item.output ?? item.content ?? item.response ?? item.response?.content ?? item.response?.output_text ?? item.message ?? item.completion ?? item;\nfunction extractRaw(obj) {\n  if (typeof obj === 'string') {\n    const t = obj.trim();\n    if (t.startsWith('{') || t.startsWith('[')) return obj;\n    return null;\n  }\n  if (!obj || typeof obj !== 'object') return null;\n  for (const key of ['text','output','content','completion','message','response']) {\n    const v = obj[key];\n    if (typeof v === 'string') {\n      const t = v.trim();\n      if (t.startsWith('{') || t.startsWith('[')) return v;\n    }\n    if (v && typeof v === 'object' && !Array.isArray(v)) {\n      const found = extractRaw(v);\n      if (found) return found;\n    }\n  }\n  if (obj.json && typeof obj.json === 'object') {\n    const found = extractRaw(obj.json);\n    if (found) return found;\n  }\n  for (const v of Object.values(obj)) {\n    if (typeof v === 'string') {\n      const t = v.trim();\n      if (t.startsWith('{') || t.startsWith('[')) return v;\n    }\n    if (v && typeof v === 'object') {\n      const found = extractRaw(v);\n      if (found) return found;\n    }\n  }\n  return null;\n}\nfunction parse(value) {\n  const fromObject = (v) => {\n    if (!v || typeof v !== 'object') return null;\n    if (v.hook || v.body || v.caption || v.hashtags) return v;\n    const vObj = Array.isArray(v) && v.length ? v[0] : v;\n    if (vObj && vObj.situation && vObj.point) {\n      const h = typeof vObj.situation === 'object' ? String(vObj.situation.description || vObj.situation.problem || '') : String(vObj.situation || '');\n      const b = typeof vObj.process === 'object' ? String(vObj.process.discovery || vObj.process.initial_steps?.[0] || '') : String(vObj.process || '');\n      const p = typeof vObj.point === 'object' ? String(vObj.point.message || '') : String(vObj.point || '');\n      return { hook: h.trim(), body: b.trim(), caption: [h, b, p].filter(Boolean).join('\\n\\n').trim(), hashtags: [] };\n    }\n    for (const key of ['output','json','data','response']) {\n      if (v[key] && typeof v[key] === 'object') {\n        const found = fromObject(v[key]);\n        if (found) return found;\n      }\n    }\n    return null;\n  };\n  const objectValue = fromObject(value);\n  if (objectValue) return objectValue;\n  let text = String(value || '').trim();\n  if (!text) return null;\n  const candidates = [text];\n  const firstBrace = text.indexOf('{');\n  if (firstBrace >= 0) {\n    let depth = 0, quote = false, escape = false, end = -1;\n    for (let i = firstBrace; i < text.length; i++) {\n      const ch = text[i];\n      if (quote) {\n        if (escape) escape = false;\n        else if (ch === '\\\\') escape = true;\n        else if (ch === '\"') quote = false;\n      } else if (ch === '\"') quote = true;\n      else if (ch === '{') depth++;\n      else if (ch === '}' && --depth === 0) { end = i; break; }\n    }\n    if (end > firstBrace) candidates.push(text.slice(firstBrace, end + 1));\n  }\n  const sanitizeControlsInStrings = (s) => {\n    let out = '', quote = false, escape = false;\n    for (let i = 0; i < s.length; i++) {\n      const ch = s[i];\n      if (quote && !escape) {\n        if (ch === '\\n') { out += '\\\\n'; continue; }\n        if (ch === '\\r') { out += '\\\\r'; continue; }\n        if (ch === '\\t') { out += '\\\\t'; continue; }\n      }\n      out += ch;\n      if (quote) {\n        if (escape) escape = false;\n        else if (ch === '\\\\') escape = true;\n        else if (ch === '\"') quote = false;\n      } else if (ch === '\"') quote = true;\n    }\n    return out;\n  };\n  for (const candidate of candidates) {\n    const cleaned = candidate.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```\\s*$/i, '').trim();\n    for (const attempt of [cleaned, sanitizeControlsInStrings(cleaned)]) {\n      try {\n        const parsed = JSON.parse(attempt);\n        if (parsed && typeof parsed === 'object') {\n          if (parsed.hook || parsed.body || parsed.caption || parsed.hashtags) return parsed;\n          const pObj = Array.isArray(parsed) && parsed.length ? parsed[0] : parsed;\n          if (pObj && pObj.situation && pObj.point) {\n            const h = typeof pObj.situation === 'object' ? String(pObj.situation.description || pObj.situation.problem || '') : String(pObj.situation || '');\n            const b = typeof pObj.process === 'object' ? String(pObj.process.discovery || pObj.process.initial_steps?.[0] || '') : String(pObj.process || '');\n            const p = typeof pObj.point === 'object' ? String(pObj.point.message || '') : String(pObj.point || '');\n            return { hook: h.trim(), body: b.trim(), caption: [h, b, p].filter(Boolean).join('\\n\\n').trim(), hashtags: [] };\n          }\n          for (const key of ['output','json','data','response','result']) {\n            const inner = parsed[key];\n            if (inner && typeof inner === 'object') {\n              const innerObj = Array.isArray(inner) && inner.length ? inner[0] : inner;\n              if (innerObj && innerObj.situation && innerObj.point) {\n                const h = typeof innerObj.situation === 'object' ? String(innerObj.situation.description || innerObj.situation.problem || '') : String(innerObj.situation || '');\n                const b = typeof innerObj.process === 'object' ? String(innerObj.process.discovery || innerObj.process.initial_steps?.[0] || '') : String(innerObj.process || '');\n                const p = typeof innerObj.point === 'object' ? String(innerObj.point.message || '') : String(innerObj.point || '');\n                return { hook: h.trim(), body: b.trim(), caption: [h, b, p].filter(Boolean).join('\\n\\n').trim(), hashtags: [] };\n              }\n            }\n          }\n        }\n      } catch (e) {}\n    }\n  }\n  return null;\n}\nconst parsed = parse(raw);\nconst hook=String(parsed?.hook || '').trim();\nconst body=String(parsed?.body || '').trim();\nconst caption=String(parsed?.caption || '').trim();\nconst tags=Array.isArray(parsed?.hashtags) ? parsed.hashtags.filter(Boolean) : (typeof parsed?.hashtags === 'string' ? parsed.hashtags.split(/[\\s,]+/).filter(Boolean) : []);\nconst hardFailure = !hook || !body || !caption;\nconst warnings=[];\nconst words=caption.replace(/#[A-Za-z0-9_]+/g,'').replace(String(upstream.latestLink || ''),'').trim().split(/\\s+/).filter(Boolean).length;\nif (words < 50 || words > 160) warnings.push(`word_count_${words}_outside_target`);\nif (tags.length < 5 || tags.length > 9) warnings.push('hashtag_count_outside_target');\nif (!String(upstream.latestLink || '') || !caption.includes(String(upstream.latestLink || ''))) warnings.push('link_missing');\nif (hardFailure) warnings.push('provider_returned_no_complete_draft');\nconst groqProducedOutput = Boolean(raw && typeof raw === \"string\" && raw.trim().length > 0);\nreturn [{ json: { ...upstream, llmRawOutput: raw, generatedDraft: parsed || null, groqProducedOutput, contentIssues: warnings, groqHardFailure: hardFailure, groqQualityWarnings: warnings, groqOk: !hardFailure, groqFailReason: hardFailure ? 'missing_or_unparseable_provider_draft' : null, groqWordCount: words, QUALITY_PASS: !hardFailure, debugItemKeys: Object.keys(item).join(', '), debugRawType: typeof raw, debugRawFirst200: String(raw || '').slice(0, 200) } }];"
+      },
+      "id": "65073300-a102-4741-8a12-14415c812765",
+      "name": "Check Groq Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        38752,
+        -8056
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const upstream = $('Normalize Dedupe Lookup').first().json;\nconst item = $input.first().json || {};\nconst raw = extractRaw(item) ?? item.text ?? item.output ?? item.content ?? item.response ?? item.response?.content ?? item.response?.output_text ?? item.message ?? item.completion ?? item;\nfunction extractRaw(obj) {\n  if (typeof obj === 'string') {\n    const t = obj.trim();\n    if (t.startsWith('{') || t.startsWith('[')) return obj;\n    return null;\n  }\n  if (!obj || typeof obj !== 'object') return null;\n  for (const key of ['text','output','content','completion','message','response']) {\n    const v = obj[key];\n    if (typeof v === 'string') {\n      const t = v.trim();\n      if (t.startsWith('{') || t.startsWith('[')) return v;\n    }\n    if (v && typeof v === 'object' && !Array.isArray(v)) {\n      const found = extractRaw(v);\n      if (found) return found;\n    }\n  }\n  if (obj.json && typeof obj.json === 'object') {\n    const found = extractRaw(obj.json);\n    if (found) return found;\n  }\n  for (const v of Object.values(obj)) {\n    if (typeof v === 'string') {\n      const t = v.trim();\n      if (t.startsWith('{') || t.startsWith('[')) return v;\n    }\n    if (v && typeof v === 'object') {\n      const found = extractRaw(v);\n      if (found) return found;\n    }\n  }\n  return null;\n}\nfunction parse(value) {\n  const fromObject = (v) => {\n    if (!v || typeof v !== 'object') return null;\n    if (v.hook || v.body || v.caption || v.hashtags) return v;\n    const vObj = Array.isArray(v) && v.length ? v[0] : v;\n    if (vObj && vObj.situation && vObj.point) {\n      const h = typeof vObj.situation === 'object' ? String(vObj.situation.description || vObj.situation.problem || '') : String(vObj.situation || '');\n      const b = typeof vObj.process === 'object' ? String(vObj.process.discovery || vObj.process.initial_steps?.[0] || '') : String(vObj.process || '');\n      const p = typeof vObj.point === 'object' ? String(vObj.point.message || '') : String(vObj.point || '');\n      return { hook: h.trim(), body: b.trim(), caption: [h, b, p].filter(Boolean).join('\\n\\n').trim(), hashtags: [] };\n    }\n    for (const key of ['output','json','data','response']) {\n      if (v[key] && typeof v[key] === 'object') {\n        const found = fromObject(v[key]);\n        if (found) return found;\n      }\n    }\n    return null;\n  };\n  const objectValue = fromObject(value);\n  if (objectValue) return objectValue;\n  let text = String(value || '').trim();\n  if (!text) return null;\n  const candidates = [text];\n  const firstBrace = text.indexOf('{');\n  if (firstBrace >= 0) {\n    let depth = 0, quote = false, escape = false, end = -1;\n    for (let i = firstBrace; i < text.length; i++) {\n      const ch = text[i];\n      if (quote) {\n        if (escape) escape = false;\n        else if (ch === '\\\\') escape = true;\n        else if (ch === '\"') quote = false;\n      } else if (ch === '\"') quote = true;\n      else if (ch === '{') depth++;\n      else if (ch === '}' && --depth === 0) { end = i; break; }\n    }\n    if (end > firstBrace) candidates.push(text.slice(firstBrace, end + 1));\n  }\n  const sanitizeControlsInStrings = (s) => {\n    let out = '', quote = false, escape = false;\n    for (let i = 0; i < s.length; i++) {\n      const ch = s[i];\n      if (quote && !escape) {\n        if (ch === '\\n') { out += '\\\\n'; continue; }\n        if (ch === '\\r') { out += '\\\\r'; continue; }\n        if (ch === '\\t') { out += '\\\\t'; continue; }\n      }\n      out += ch;\n      if (quote) {\n        if (escape) escape = false;\n        else if (ch === '\\\\') escape = true;\n        else if (ch === '\"') quote = false;\n      } else if (ch === '\"') quote = true;\n    }\n    return out;\n  };\n  for (const candidate of candidates) {\n    const cleaned = candidate.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```\\s*$/i, '').trim();\n    for (const attempt of [cleaned, sanitizeControlsInStrings(cleaned)]) {\n      try {\n        const parsed = JSON.parse(attempt);\n        if (parsed && typeof parsed === 'object') {\n          if (parsed.hook || parsed.body || parsed.caption || parsed.hashtags) return parsed;\n          const pObj = Array.isArray(parsed) && parsed.length ? parsed[0] : parsed;\n          if (pObj && pObj.situation && pObj.point) {\n            const h = typeof pObj.situation === 'object' ? String(pObj.situation.description || pObj.situation.problem || '') : String(pObj.situation || '');\n            const b = typeof pObj.process === 'object' ? String(pObj.process.discovery || pObj.process.initial_steps?.[0] || '') : String(pObj.process || '');\n            const p = typeof pObj.point === 'object' ? String(pObj.point.message || '') : String(pObj.point || '');\n            return { hook: h.trim(), body: b.trim(), caption: [h, b, p].filter(Boolean).join('\\n\\n').trim(), hashtags: [] };\n          }\n          for (const key of ['output','json','data','response','result']) {\n            const inner = parsed[key];\n            if (inner && typeof inner === 'object') {\n              const innerObj = Array.isArray(inner) && inner.length ? inner[0] : inner;\n              if (innerObj && innerObj.situation && innerObj.point) {\n                const h = typeof innerObj.situation === 'object' ? String(innerObj.situation.description || innerObj.situation.problem || '') : String(innerObj.situation || '');\n                const b = typeof innerObj.process === 'object' ? String(innerObj.process.discovery || innerObj.process.initial_steps?.[0] || '') : String(innerObj.process || '');\n                const p = typeof innerObj.point === 'object' ? String(innerObj.point.message || '') : String(innerObj.point || '');\n                return { hook: h.trim(), body: b.trim(), caption: [h, b, p].filter(Boolean).join('\\n\\n').trim(), hashtags: [] };\n              }\n            }\n          }\n        }\n      } catch (e) {}\n    }\n  }\n  return null;\n}\nconst parsed = parse(raw);\nconst hook=String(parsed?.hook || '').trim();\nconst body=String(parsed?.body || '').trim();\nconst caption=String(parsed?.caption || '').trim();\nconst tags=Array.isArray(parsed?.hashtags) ? parsed.hashtags.filter(Boolean) : (typeof parsed?.hashtags === 'string' ? parsed.hashtags.split(/[\\s,]+/).filter(Boolean) : []);\nconst hardFailure = !hook || !body || !caption;\nconst warnings=[];\nconst words=caption.replace(/#[A-Za-z0-9_]+/g,'').replace(String(upstream.latestLink || ''),'').trim().split(/\\s+/).filter(Boolean).length;\nif (words < 50 || words > 160) warnings.push(`word_count_${words}_outside_target`);\nif (tags.length < 5 || tags.length > 9) warnings.push('hashtag_count_outside_target');\nif (!String(upstream.latestLink || '') || !caption.includes(String(upstream.latestLink || ''))) warnings.push('link_missing');\nif (hardFailure) warnings.push('provider_returned_no_complete_draft');\nreturn [{ json: { ...upstream, llmRawOutput: raw, generatedDraft: parsed || null, contentIssues: warnings, ollamaHardFailure: hardFailure, ollamaQualityWarnings: warnings, ollamaOk: !hardFailure, ollamaFailReason: hardFailure ? 'missing_or_unparseable_provider_draft' : null, ollamaWordCount: words, QUALITY_PASS: !hardFailure } }];"
+      },
+      "id": "c9a2ee28-defb-41a4-a85f-2972d7266e0b",
+      "name": "Check Ollama Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40576,
+        -8424
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2e7f07de-c8d2-47f9-aada-4f7b39cb8515",
+              "leftValue": "={{ $json.groqOk }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "632c9ab6-5e53-4a20-b510-0406a8abe03b",
+      "name": "Groq Output OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        38976,
+        -8056
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json || {};\nreturn [{ json: { ...item, aiProviderUsed: 'groq', aiModelUsed: item.groqModel || 'openai/gpt-oss-120b', fallbackTriggered: false, fallbackReason: item.groqHardFailure ? 'Groq mode selected; Ollama fallback intentionally disabled.' : null } }];"
+      },
+      "id": "47b5b5f1-ea89-4e74-a5e3-376f21577d36",
+      "name": "Mark Groq Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40288,
+        -8128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json || {};\nreturn [{ json: { ...item, aiProviderUsed: 'ollama', aiModelUsed: item.ollamaModel || 'qwen2.5:7b', fallbackTriggered: true, fallbackReason: 'Groq had a real API/empty/unparseable response failure while aiMode was auto.' } }];"
+      },
+      "id": "bfba0ca3-7c92-406c-a542-c96a78f4a872",
+      "name": "Mark Ollama Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40800,
+        -8424
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "image-enabled",
+              "leftValue": "={{ $json.imageGenEnabled }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              },
+              "combinator": "and"
+            },
+            {
+              "id": "5449c8c4-8b7e-468e-bbe5-d8638fbbefc4",
+              "leftValue": "={{ $('Prepare Blog Data').item.json.imageGenEnabled }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "51f82884-bcea-4e21-9424-35fbbfa8d165",
+      "name": "Image Generation Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        41920,
+        -8056
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.cloudflare.com/client/v4/accounts/YOUR_CLOUDFLARE_ACCOUNT_ID/ai/run/@cf/black-forest-labs/flux-1-schnell",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ prompt: String($json.text || $json.imagePrompt || \"\"), steps: 4 }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "c93c7277-7cee-4fd7-b08e-6c568aca3a95",
+      "name": "Cloudflare Generate Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        43296,
+        -8304
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2500,
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Header Auth account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-image",
+              "leftValue": "={{ !!($json.result?.image || $json.result?.data || $json.result?.output || $json.result?.response?.image || $json.image || $json.data || $json.output || (Array.isArray($json.result) && $json.result.length)) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "combinator": "and"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5d2e820f-fa21-4fc9-ab6f-4f9ae9674eb0",
+      "name": "Cloudflare Image Generated?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        43520,
+        -8304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json || {};\nconst source = (() => {\n  try { return $('JS Fallback Image Prompt').first().json; }\n  catch (e) { try { return $('Normalize Dedupe Lookup').first().json; } catch (e2) { return response; } }\n})() || {};\nconst candidates = [\n  response.result?.image, response.result?.data, response.result?.output,\n  response.image, response.data, response.output, response.result?.response?.image\n];\nlet raw = candidates.find(v => typeof v === 'string' && v.trim()) || '';\nif (!raw && Array.isArray(response.result)) raw = response.result.find(v => typeof v === 'string' && v.trim()) || '';\nconst base64 = String(raw).replace(/^data:image\\/[^;]+;base64,/, '').replace(/\\s/g, '').trim();\nif (!base64) throw new Error(`Cloudflare response did not contain image data. Response keys: ${Object.keys(response).join(', ')}`);\nconst mimeType = response.result?.mime_type || response.mime_type || 'image/png';\nconst companySlug = String(source.companyName || 'company').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'company';\nconst binary = { data: { data: base64, mimeType, fileName: `${companySlug}-${String(source.dedupeKey || Date.now()).replace(/[^a-z0-9]/gi, '-').slice(0, 80)}.png` } };\nconst dataUrl = `data:${mimeType};base64,${base64}`;\nconst rssImageUrl = String(source.rssImageUrl || source.imageUrl || '').trim();\nreturn [{\n  json: {\n    ...source,\n    rssImageUrl,\n    imageUrl: rssImageUrl,\n    generatedImagePreviewUrl: dataUrl,\n    previewImageUrl: dataUrl,\n    imageSource: 'cloudflare-generated',\n    generatedImageStatus: 'success'\n  },\n  binary\n}];"
+      },
+      "id": "ab9f1b15-9959-4251-97b3-36b840ffe049",
+      "name": "Prepare Generated Image",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        43744,
+        -8352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nreturn [{ json: { ...item.json, imageSource: 'rss-image-generation-disabled', generatedImageStatus: 'disabled', generatedImagePreviewUrl: '', imageGenerationNote: 'Image generation disabled by workflow setting.' }, binary: item.binary }];"
+      },
+      "id": "c093337b-3f70-41c9-b01a-872f8e86f792",
+      "name": "Image Generation Disabled",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        43744,
+        -7860
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const current = $input.first();\nlet source = current.json;\ntry { source = $('Generate Image Concept - Gemini Fallback').first().json || source; } catch (e) {}\ntry { source = $('Generate Image Concept').first().json || source; } catch (e) {}\nconst reason = current.json?.message || current.json?.error?.message || 'No usable image concept was generated after Groq and Gemini retries.';\nconst fallbackUrl = String(source.imageUrl || source.previewImageUrl || source.rssImageUrl || '').trim();\nreturn [{ json: { ...source, generatedImagePreviewUrl: fallbackUrl, previewImageUrl: fallbackUrl, imageSource: fallbackUrl ? 'rss-fallback-after-image-concept-failures' : 'no-image-after-image-concept-failures', generatedImageStatus: 'fallback', imageGenerationNote: String(reason) }, binary: current.binary || source.binary }];"
+      },
+      "id": "b06f2bc9-0232-4fa8-91d2-5ab309dd230d",
+      "name": "Use Existing Article Image",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        43744,
+        -8080
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-generated",
+              "leftValue": "={{ $json.hasGeneratedImage }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "combinator": "and"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b2b024ab-c439-421b-869f-55f2b765d843",
+      "name": "Has Generated Binary Image?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        44864,
+        -8204
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first();\nconst json = input.json || {};\nconst binary = { ...(input.binary || {}) };\n\n// A Code/IF node can drop binary data. Recover it from this item first, then\n// directly from Prepare Generated Image, which is the authoritative source.\nlet dataUrl = String(json.generatedImagePreviewUrl || json.previewImageUrl || '').trim();\nlet sourceBinary = null;\ntry {\n  const generated = $('Prepare Generated Image').first();\n  sourceBinary = generated?.binary?.data || null;\n  if (!dataUrl) dataUrl = String(generated?.json?.generatedImagePreviewUrl || generated?.json?.previewImageUrl || '').trim();\n} catch (e) {}\n\nif (!binary.data?.data && sourceBinary?.data) binary.data = sourceBinary;\nif (!binary.data?.data) {\n  const match = dataUrl.match(/^data:(image\\/[a-zA-Z0-9.+-]+);base64,([\\s\\S]+)$/i);\n  if (match) {\n    const mimeType = match[1];\n    const companySlug = String(json.companyName || 'company').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'company';\n    binary.data = {\n      data: match[2].replace(/\\s/g, ''),\n      mimeType,\n      fileName: `${companySlug}-generated-${String(json.dedupeKey || Date.now()).replace(/[^a-z0-9]/gi, '-').slice(0, 80)}.${mimeType.split('/')[1].replace('jpeg', 'jpg')}`\n    };\n  }\n}\nconst restored = Boolean(binary.data?.data);\nconst rssImageUrl = String(json.rssImageUrl || json.imageUrl || '').trim();\nreturn [{\n  json: {\n    ...json,\n    rssImageUrl,\n    imageUrl: rssImageUrl,\n    generatedImageBinaryRestored: restored,\n    generatedImageBinaryPresentBeforeRestore: Boolean(input.binary?.data?.data),\n    generatedImageStatus: restored ? 'success' : (json.generatedImageStatus || 'unavailable'),\n    imageBinaryDiagnostic: restored ? 'generated_binary_ready' : 'no_generated_binary_found'\n  },\n  binary\n}];"
+      },
+      "id": "494207e6-0a17-488f-8638-5266cff991f6",
+      "name": "Restore Generated Image Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        44416,
+        -8204
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4a399071-b280-4f89-8d85-b529903ee3bc",
+              "leftValue": "={{ $json.aiMode === 'auto' && $json.groqHardFailure === true && !$json.groqProducedOutput }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "19323f89-c31c-4fc6-8d4c-e41f442b7cce",
+      "name": "Groq Auto Fallback?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        40000,
+        -8004
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first();\nconst binary = input.binary || {};\nconst hasGeneratedImage = Boolean(binary.data?.data);\nreturn [{\n  json: { ...(input.json || {}), hasGeneratedImage, imageBinaryDiagnostic: hasGeneratedImage ? 'generated_binary_detected' : 'no_generated_binary_detected' },\n  binary\n}];"
+      },
+      "id": "7cdb7d60-a058-47e9-adb9-fca489588134",
+      "name": "Detect Generated Image Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        44640,
+        -8204
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "temperature": 0.5
+        },
+        "modelName": "models/gemini-2.5-flash-lite"
+      },
+      "id": "b12df0b4-0c43-4936-b3d3-877b1334b367",
+      "name": "Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        39272,
+        -7708
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ `Blog: ${$json.latestTitle}\n\nSummary: ${$json.previewSummary}\n\n---\n\nIdentify the single most specific operational moment from the blog. Then write a short LinkedIn post about that moment.\n\nUse this structure:\n1. HOOK: one sharp line. Direct opinion, contrast, scenario, or question-led. Must make a specific claim about a real friction — not a neutral observation.\n2. STORY: what happens → the complication → the operational consequence.\n3. INSIGHT: why it matters or what teams often miss.\n4. QUESTION: one easy, relevant question with exactly 3 specific options (not 2). Not a broad open question.\n5. LINK + HASHTAGS: link on its own line. 7–8 topic-matched hashtags.\n\nNo overlapping content between hook, body, and caption. Every statement must be a direct observation, not a possibility. No \"can\", \"may\", \"might\", \"could\", or \"often\" as hedging words.\n\nEXAMPLE (match the composition, not the subject):\n---\nThe more locations you support, the easier it is to lose sight of an endpoint.\n\nA user reports an issue from another office, home, or customer site.\n\nBefore IT can fix it, the team needs to know which device is affected, whether it is online, and whether remote access is available.\n\nWithout that visibility, a simple support request can become a long back-and-forth. 🔍\n\nWhat is the biggest obstacle in managing remote endpoints: visibility, connectivity, or getting access to the device?\n---\n\nVOICE: Practical and direct. Short sentences. Peer-to-peer, not salesman. One clear point. Slightly opinionated.\n\nBANNED: \"significant friction\", \"crucial\", \"streamline\", \"transform\", \"breakdown in\", \"major challenge\", \"time-consuming\", \"error-prone\", \"game-changer\", \"boost productivity\", \"inefficiencies\", \"increased downtime\", \"unified view\", \"resolve issues quickly\"\n\nHASHTAGS: 7–8 tags matching the blog topic. Combine general (#ITOperations #EndpointManagement #CyberSecurity) with specific (#PatchManagement #RemoteDesktopSupport #VulnerabilityManagement).\n\nEMOJI: Exactly 1. Professional emojis like 🔍 🔧 💻 ⚡ 🔒 📡 ✅ 🛡️ — pick one that fits the topic naturally. No decorative emojis.\n\nEXACT OUTPUT FORMAT — copy this EXACT format, every string value in double quotes:\n{\n  \"hook\": \"one sentence with an emoji 🔍. Not repeated in body.\",\n  \"body\": \"STORY + INSIGHT. Does NOT include the hook or the question.\",\n  \"caption\": \"one sentence. Not repeated in body.\",\n  \"hashtags\": [\"#Tag1\", \"#Tag2\", \"#Tag3\", \"#Tag4\", \"#Tag5\", \"#Tag6\", \"#Tag7\"]\n}\n\nReturn ONLY this JSON object. No text before or after it. No extra keys. Every string must be in double quotes.\n\nNever invent a person, company, incident, or statistic. Do not claim personal experience unless it appears in the blog summary.` }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Return valid JSON only. Never copy the example. Never use a phrase from the banned list."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "id": "80da0164-adba-46ff-b1e9-93e643425527",
+      "name": "Generate Post - Gemini",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        39200,
+        -7932
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2500,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const upstream = $('Normalize Dedupe Lookup').first().json;\nconst item = $input.first().json || {};\nconst raw = extractRaw(item) ?? item.text ?? item.output ?? item.content ?? item.response ?? item.response?.content ?? item.response?.output_text ?? item.message ?? item.completion ?? item;\nfunction extractRaw(obj) {\n  if (typeof obj === 'string') {\n    const t = obj.trim();\n    if (t.startsWith('{') || t.startsWith('[')) return obj;\n    return null;\n  }\n  if (!obj || typeof obj !== 'object') return null;\n  for (const key of ['text','output','content','completion','message','response']) {\n    const v = obj[key];\n    if (typeof v === 'string') {\n      const t = v.trim();\n      if (t.startsWith('{') || t.startsWith('[')) return v;\n    }\n    if (v && typeof v === 'object' && !Array.isArray(v)) {\n      const found = extractRaw(v);\n      if (found) return found;\n    }\n  }\n  if (obj.json && typeof obj.json === 'object') {\n    const found = extractRaw(obj.json);\n    if (found) return found;\n  }\n  for (const v of Object.values(obj)) {\n    if (typeof v === 'string') {\n      const t = v.trim();\n      if (t.startsWith('{') || t.startsWith('[')) return v;\n    }\n    if (v && typeof v === 'object') {\n      const found = extractRaw(v);\n      if (found) return found;\n    }\n  }\n  return null;\n}\nfunction parse(value) {\n  const fromObject = (v) => {\n    if (!v || typeof v !== 'object') return null;\n    if (v.hook || v.body || v.caption || v.hashtags) return v;\n    const vObj = Array.isArray(v) && v.length ? v[0] : v;\n    if (vObj && vObj.situation && vObj.point) {\n      const h = typeof vObj.situation === 'object' ? String(vObj.situation.description || vObj.situation.problem || '') : String(vObj.situation || '');\n      const b = typeof vObj.process === 'object' ? String(vObj.process.discovery || vObj.process.initial_steps?.[0] || '') : String(vObj.process || '');\n      const p = typeof vObj.point === 'object' ? String(vObj.point.message || '') : String(vObj.point || '');\n      return { hook: h.trim(), body: b.trim(), caption: [h, b, p].filter(Boolean).join('\\n\\n').trim(), hashtags: [] };\n    }\n    for (const key of ['output','json','data','response']) {\n      if (v[key] && typeof v[key] === 'object') {\n        const found = fromObject(v[key]);\n        if (found) return found;\n      }\n    }\n    return null;\n  };\n  const objectValue = fromObject(value);\n  if (objectValue) return objectValue;\n  let text = String(value || '').trim();\n  if (!text) return null;\n  const candidates = [text];\n  const firstBrace = text.indexOf('{');\n  if (firstBrace >= 0) {\n    let depth = 0, quote = false, escape = false, end = -1;\n    for (let i = firstBrace; i < text.length; i++) {\n      const ch = text[i];\n      if (quote) {\n        if (escape) escape = false;\n        else if (ch === '\\\\') escape = true;\n        else if (ch === '\"') quote = false;\n      } else if (ch === '\"') quote = true;\n      else if (ch === '{') depth++;\n      else if (ch === '}' && --depth === 0) { end = i; break; }\n    }\n    if (end > firstBrace) candidates.push(text.slice(firstBrace, end + 1));\n  }\n  const sanitizeControlsInStrings = (s) => {\n    let out = '', quote = false, escape = false;\n    for (let i = 0; i < s.length; i++) {\n      const ch = s[i];\n      if (quote && !escape) {\n        if (ch === '\\n') { out += '\\\\n'; continue; }\n        if (ch === '\\r') { out += '\\\\r'; continue; }\n        if (ch === '\\t') { out += '\\\\t'; continue; }\n      }\n      out += ch;\n      if (quote) {\n        if (escape) escape = false;\n        else if (ch === '\\\\') escape = true;\n        else if (ch === '\"') quote = false;\n      } else if (ch === '\"') quote = true;\n    }\n    return out;\n  };\n  for (const candidate of candidates) {\n    const cleaned = candidate.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```\\s*$/i, '').trim();\n    for (const attempt of [cleaned, sanitizeControlsInStrings(cleaned)]) {\n      try {\n        const parsed = JSON.parse(attempt);\n        if (parsed && typeof parsed === 'object') {\n          if (parsed.hook || parsed.body || parsed.caption || parsed.hashtags) return parsed;\n          const pObj = Array.isArray(parsed) && parsed.length ? parsed[0] : parsed;\n          if (pObj && pObj.situation && pObj.point) {\n            const h = typeof pObj.situation === 'object' ? String(pObj.situation.description || pObj.situation.problem || '') : String(pObj.situation || '');\n            const b = typeof pObj.process === 'object' ? String(pObj.process.discovery || pObj.process.initial_steps?.[0] || '') : String(pObj.process || '');\n            const p = typeof pObj.point === 'object' ? String(pObj.point.message || '') : String(pObj.point || '');\n            return { hook: h.trim(), body: b.trim(), caption: [h, b, p].filter(Boolean).join('\\n\\n').trim(), hashtags: [] };\n          }\n          for (const key of ['output','json','data','response','result']) {\n            const inner = parsed[key];\n            if (inner && typeof inner === 'object') {\n              const innerObj = Array.isArray(inner) && inner.length ? inner[0] : inner;\n              if (innerObj && innerObj.situation && innerObj.point) {\n                const h = typeof innerObj.situation === 'object' ? String(innerObj.situation.description || innerObj.situation.problem || '') : String(innerObj.situation || '');\n                const b = typeof innerObj.process === 'object' ? String(innerObj.process.discovery || innerObj.process.initial_steps?.[0] || '') : String(innerObj.process || '');\n                const p = typeof innerObj.point === 'object' ? String(innerObj.point.message || '') : String(innerObj.point || '');\n                return { hook: h.trim(), body: b.trim(), caption: [h, b, p].filter(Boolean).join('\\n\\n').trim(), hashtags: [] };\n              }\n            }\n          }\n        }\n      } catch (e) {}\n    }\n  }\n  return null;\n}\nconst parsed = parse(raw);\nconst hook=String(parsed?.hook || '').trim();\nconst body=String(parsed?.body || '').trim();\nconst caption=String(parsed?.caption || '').trim();\nconst tags=Array.isArray(parsed?.hashtags) ? parsed.hashtags.filter(Boolean) : (typeof parsed?.hashtags === 'string' ? parsed.hashtags.split(/[\\s,]+/).filter(Boolean) : []);\nconst hardFailure = !hook || !body || !caption;\nconst warnings=[];\nconst words=caption.replace(/#[A-Za-z0-9_]+/g,'').replace(String(upstream.latestLink || ''),'').trim().split(/\\s+/).filter(Boolean).length;\nif (words < 50 || words > 160) warnings.push(`word_count_${words}_outside_target`);\nif (tags.length < 5 || tags.length > 9) warnings.push('hashtag_count_outside_target');\nif (!String(upstream.latestLink || '') || !caption.includes(String(upstream.latestLink || ''))) warnings.push('link_missing');\nif (hardFailure) warnings.push('provider_returned_no_complete_draft');\nconst geminiProducedOutput = Boolean(raw && typeof raw === \"string\" && raw.trim().length > 0);\nreturn [{ json: { ...upstream, llmRawOutput: raw, generatedDraft: parsed || null, geminiProducedOutput, contentIssues: warnings, geminiHardFailure: hardFailure, geminiQualityWarnings: warnings, geminiOk: !hardFailure, geminiFailReason: hardFailure ? 'missing_or_unparseable_provider_draft' : null, geminiWordCount: words, QUALITY_PASS: !hardFailure, debugItemKeys: Object.keys(item).join(', '), debugRawType: typeof raw, debugRawFirst200: String(raw || '').slice(0, 200) } }];"
+      },
+      "id": "8716f69e-4fea-4edb-8b47-0ec4d7f1876c",
+      "name": "Check Gemini Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        39552,
+        -7932
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "98ffdaf2-8c5e-4cab-ad95-f4cd2e20b947",
+              "leftValue": "={{ $json.geminiOk }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f0eb89f5-2580-43e7-8d8f-67dccd709528",
+      "name": "Gemini Output OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        39776,
+        -7932
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json || {};\nreturn [{ json: { ...item, aiProviderUsed: 'gemini', aiModelUsed: item.geminiModel || 'gemini-2.0-flash', fallbackTriggered: false, fallbackReason: item.geminiHardFailure ? 'Gemini fallback had a failure; Ollama fallback intentionally disabled.' : null } }];"
+      },
+      "id": "e1e175dd-4004-496d-8ece-706cb99ff080",
+      "name": "Mark Gemini Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40800,
+        -7836
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are the art director for a LinkedIn post. Write ONE image-generation prompt. A stranger must understand this article's specific point from the picture alone, in two seconds.\n\nARTICLE TITLE:\n${$json.latestTitle}\n\nARTICLE SUMMARY:\n${$json.previewSummary}\n\nLOOK\nThe first sentence of your prompt must start with \"Clean conceptual illustration,\". Keep that look for the whole image.\nPlain, uncluttered background. Color and meaning come from illustrated or sketched elements, like one still frame of motion design. A real hand or one simple prop may appear only when it makes the idea clearer. The illustrated part stays the subject.\nNot a full photograph. Not a flat geometric poster. Not a product shot. Do not ask for a square crop.\n\nSUBJECT\n1. Name this article's one concrete idea. Ignore the company name.\n2. Draw that idea. A canvas, app, or workflow article becomes illustrated cards or panels being arranged. A growth or steps article becomes a rising sequence of drawn marks. A missing piece or backlog becomes a clear row of illustrated items with one item obviously different.\n3. Change the article and the picture must change. Do not default to lightbulbs unless the article is actually about ideas shown as bulbs.\n4. If the article's idea is not visible in the picture, discard the idea and start again.\n\nNEVER\n- Gears, wrenches, glass drops, rust, workshops, or cluttered desks\n- A laptop as the hero\n- Logos, letters, numbers, or watermarks\n- Glossy product photography or rusty metal\n\nOUTPUT\nOnly the image prompt. Four to six sentences. No title and no explanation.\nSentence 1 starts with: Clean conceptual illustration,\nThen name the illustrated subject, any single real object, the plain background, the colors, and the article idea the picture shows.\nEnd with: No text, no logos, no watermark.\n",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are an expert visual director and conceptual photographer. Your task is to write a highly detailed, abstract image generation prompt based on the provided blog article. Do not output any instructions, markdown, or conversational text. Output ONLY the raw image description."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "id": "956ff845-4819-4693-ad93-449295a280d9",
+      "name": "Generate Image Concept",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        42144,
+        -8232
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2500,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "26c28e89-91b1-4f77-9596-3ec8c5596b2d",
+              "leftValue": "={{ $json.text && $json.text.length > 10 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3e3f02bc-35bb-4240-96f6-2862cb52d7e3",
+      "name": "Image Concept Generated?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        42496,
+        -8232
+      ]
+    },
+    {
+      "parameters": {
+        "model": "qwen/qwen3.8-27b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        42216,
+        -8008
+      ],
+      "id": "fbfc17ac-de27-4873-aebb-8a25d200bd04",
+      "name": "Groq Chat Model1",
+      "credentials": {
+        "groqApi": {
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are the art director for a LinkedIn post. Write ONE image-generation prompt. A stranger must understand this article's specific point from the picture alone, in two seconds.\n\nARTICLE TITLE:\n${$json.latestTitle}\n\nARTICLE SUMMARY:\n${$json.previewSummary}\n\nLOOK\nThe first sentence of your prompt must start with \"Clean conceptual illustration,\". Keep that look for the whole image.\nPlain, uncluttered background. Color and meaning come from illustrated or sketched elements, like one still frame of motion design. A real hand or one simple prop may appear only when it makes the idea clearer. The illustrated part stays the subject.\nNot a full photograph. Not a flat geometric poster. Not a product shot. Do not ask for a square crop.\n\nSUBJECT\n1. Name this article's one concrete idea. Ignore the company name.\n2. Draw that idea. A canvas, app, or workflow article becomes illustrated cards or panels being arranged. A growth or steps article becomes a rising sequence of drawn marks. A missing piece or backlog becomes a clear row of illustrated items with one item obviously different.\n3. Change the article and the picture must change. Do not default to lightbulbs unless the article is actually about ideas shown as bulbs.\n4. If the article's idea is not visible in the picture, discard the idea and start again.\n\nNEVER\n- Gears, wrenches, glass drops, rust, workshops, or cluttered desks\n- A laptop as the hero\n- Logos, letters, numbers, or watermarks\n- Glossy product photography or rusty metal\n\nOUTPUT\nOnly the image prompt. Four to six sentences. No title and no explanation.\nSentence 1 starts with: Clean conceptual illustration,\nThen name the illustrated subject, any single real object, the plain background, the colors, and the article idea the picture shows.\nEnd with: No text, no logos, no watermark.\n",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are an expert visual director and conceptual photographer. Your task is to write a highly detailed, abstract image generation prompt based on the provided blog article. Do not output any instructions, markdown, or conversational text. Output ONLY the raw image description."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "id": "bd284425-6fb4-4e8b-81c4-dc13ac4739b9",
+      "name": "Generate Image Concept - Gemini Fallback",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        42720,
+        -8108
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2500,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "options": {
+          "temperature": 0.5
+        },
+        "modelName": "models/gemini-2.5-flash-lite"
+      },
+      "id": "d70e9344-d31e-4bce-b2b9-52c0925d2910",
+      "name": "Gemini Image Concept Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        42792,
+        -7884
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "26c28e89-91b1-4f77-9596-3ec8c5596b2d",
+              "leftValue": "={{ $json.text && $json.text.length > 10 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8ded63c2-3439-4c8a-89ad-5f0b4c431bce",
+      "name": "Image Concept Generated After Gemini?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        43072,
+        -8108
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "RSS Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Read": {
+      "main": [
+        [
+          {
+            "node": "Prepare Blog Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Blog Data": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Read Dedupe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets Read Dedupe": {
+      "main": [
+        [
+          {
+            "node": "Normalize Dedupe Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Dedupe Lookup": {
+      "main": [
+        [
+          {
+            "node": "Already Posted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Posted?": {
+      "main": [
+        [
+          {
+            "node": "Already Posted Output",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ollama Only Mode?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Post - Groq": {
+      "main": [
+        [
+          {
+            "node": "Check Groq Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Build Preview": {
+      "main": [
+        [
+          {
+            "node": "Parse OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse OK?": {
+      "main": [
+        [
+          {
+            "node": "AI Parse Error Output",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preview Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preview Output": {
+      "main": [
+        [
+          {
+            "node": "Image Generation Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn Test Post": {
+      "main": [
+        [
+          {
+            "node": "Prepare Dedupe Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Dedupe Row": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Append Dedupe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets Append Dedupe": {
+      "main": [
+        [
+          {
+            "node": "LinkedIn Post Success Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build LinkedIn Visual Preview": {
+      "main": [
+        [
+          {
+            "node": "Post to LinkedIn Now?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to LinkedIn Now?": {
+      "main": [
+        [
+          {
+            "node": "Restore Generated Image Binary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preview Ready Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preview Ready Output": {
+      "main": [
+        [
+          {
+            "node": "Preview Browser Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Image?": {
+      "main": [
+        [
+          {
+            "node": "Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Image Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image": {
+      "main": [
+        [
+          {
+            "node": "Ensure LinkedIn URN Present",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize LinkedIn Image Upload": {
+      "main": [
+        [
+          {
+            "node": "Prepare Binary Upload Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Image Binary to LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "Attach LinkedIn Image URN",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach LinkedIn Image URN": {
+      "main": [
+        [
+          {
+            "node": "LinkedIn Test Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Image Upload": {
+      "main": [
+        [
+          {
+            "node": "LinkedIn Test Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ensure LinkedIn URN Present": {
+      "main": [
+        [
+          {
+            "node": "Initialize LinkedIn Image Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Binary Upload Payload": {
+      "main": [
+        [
+          {
+            "node": "Upload Image Binary to LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate Post - Groq",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Or Fallback LLM Output": {
+      "main": [
+        [
+          {
+            "node": "Validate & Build Preview",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Post - Ollama": {
+      "main": [
+        [
+          {
+            "node": "Check Ollama Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate Post - Ollama",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Only Mode?": {
+      "main": [
+        [
+          {
+            "node": "Generate Post - Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Post - Groq",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Groq Output": {
+      "main": [
+        [
+          {
+            "node": "Groq Output OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Ollama Output": {
+      "main": [
+        [
+          {
+            "node": "Mark Ollama Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Output OK?": {
+      "main": [
+        [
+          {
+            "node": "Mark Groq Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Post - Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Groq Result": {
+      "main": [
+        [
+          {
+            "node": "Parse Or Fallback LLM Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Ollama Result": {
+      "main": [
+        [
+          {
+            "node": "Parse Or Fallback LLM Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Image Generation Enabled?": {
+      "main": [
+        [
+          {
+            "node": "Generate Image Concept",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Image Generation Disabled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cloudflare Generate Image": {
+      "main": [
+        [
+          {
+            "node": "Cloudflare Image Generated?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cloudflare Image Generated?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Generated Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Use Existing Article Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Generated Image": {
+      "main": [
+        [
+          {
+            "node": "Build LinkedIn Visual Preview",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Image Generation Disabled": {
+      "main": [
+        [
+          {
+            "node": "Build LinkedIn Visual Preview",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use Existing Article Image": {
+      "main": [
+        [
+          {
+            "node": "Build LinkedIn Visual Preview",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Generated Binary Image?": {
+      "main": [
+        [
+          {
+            "node": "Ensure LinkedIn URN Present",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Has Image?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Generated Image Binary": {
+      "main": [
+        [
+          {
+            "node": "Detect Generated Image Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Auto Fallback?": {
+      "main": [
+        [
+          {
+            "node": "Generate Post - Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Groq Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detect Generated Image Binary": {
+      "main": [
+        [
+          {
+            "node": "Has Generated Binary Image?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate Post - Gemini",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Post - Gemini": {
+      "main": [
+        [
+          {
+            "node": "Check Gemini Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Gemini Output": {
+      "main": [
+        [
+          {
+            "node": "Gemini Output OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Output OK?": {
+      "main": [
+        [
+          {
+            "node": "Mark Gemini Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Groq Auto Fallback?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Gemini Result": {
+      "main": [
+        [
+          {
+            "node": "Parse Or Fallback LLM Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Image Concept": {
+      "main": [
+        [
+          {
+            "node": "Image Concept Generated?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Image Concept Generated?": {
+      "main": [
+        [
+          {
+            "node": "Cloudflare Generate Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Image Concept - Gemini Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate Image Concept",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Image Concept - Gemini Fallback": {
+      "main": [
+        [
+          {
+            "node": "Image Concept Generated After Gemini?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Image Concept Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate Image Concept - Gemini Fallback",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Image Concept Generated After Gemini?": {
+      "main": [
+        [
+          {
+            "node": "Cloudflare Generate Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Use Existing Article Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
