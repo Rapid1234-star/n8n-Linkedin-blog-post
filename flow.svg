@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 220" width="1120" height="220" role="img" aria-label="Workflow from the blog feed to a LinkedIn post">
+  <rect width="1120" height="220" rx="18" fill="#0B1220"/>
+  <text x="28" y="36" fill="#F5F7FB" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" font-weight="650">One new article. One post.</text>
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif" text-anchor="middle">
+    <rect x="28" y="64" width="150" height="120" rx="14" fill="#151D30" stroke="#2C3C58"/>
+    <circle cx="103" cy="96" r="13" fill="#3D8BFF"/>
+    <text x="103" y="101" fill="#FFFFFF" font-size="12" font-weight="700">1</text>
+    <text x="103" y="132" fill="#F5F7FB" font-size="15" font-weight="650">Read</text>
+    <text x="103" y="154" fill="#9AABC8" font-size="12">Blog feed</text>
+
+    <rect x="206" y="64" width="150" height="120" rx="14" fill="#151D30" stroke="#2C3C58"/>
+    <circle cx="281" cy="96" r="13" fill="#3D8BFF"/>
+    <text x="281" y="101" fill="#FFFFFF" font-size="12" font-weight="700">2</text>
+    <text x="281" y="132" fill="#F5F7FB" font-size="15" font-weight="650">Skip</text>
+    <text x="281" y="154" fill="#9AABC8" font-size="12">Already posted</text>
+
+    <rect x="384" y="64" width="150" height="120" rx="14" fill="#151D30" stroke="#2C3C58"/>
+    <circle cx="459" cy="96" r="13" fill="#3D8BFF"/>
+    <text x="459" y="101" fill="#FFFFFF" font-size="12" font-weight="700">3</text>
+    <text x="459" y="132" fill="#F5F7FB" font-size="15" font-weight="650">Write</text>
+    <text x="459" y="154" fill="#9AABC8" font-size="12">Groq, then Gemini</text>
+
+    <rect x="562" y="64" width="150" height="120" rx="14" fill="#151D30" stroke="#2C3C58"/>
+    <circle cx="637" cy="96" r="13" fill="#3D8BFF"/>
+    <text x="637" y="101" fill="#FFFFFF" font-size="12" font-weight="700">4</text>
+    <text x="637" y="132" fill="#F5F7FB" font-size="15" font-weight="650">Draw</text>
+    <text x="637" y="154" fill="#9AABC8" font-size="12">Cloudflare</text>
+
+    <rect x="740" y="64" width="150" height="120" rx="14" fill="#151D30" stroke="#2C3C58"/>
+    <circle cx="815" cy="96" r="13" fill="#3D8BFF"/>
+    <text x="815" y="101" fill="#FFFFFF" font-size="12" font-weight="700">5</text>
+    <text x="815" y="132" fill="#F5F7FB" font-size="15" font-weight="650">Preview</text>
+    <text x="815" y="154" fill="#9AABC8" font-size="12">Check it first</text>
+
+    <rect x="918" y="64" width="174" height="120" rx="14" fill="#13261C" stroke="#2F6B4F"/>
+    <circle cx="1005" cy="96" r="13" fill="#3DDC84"/>
+    <text x="1005" y="101" fill="#06210F" font-size="12" font-weight="700">6</text>
+    <text x="1005" y="132" fill="#F5F7FB" font-size="15" font-weight="650">Publish</text>
+    <text x="1005" y="154" fill="#9AABC8" font-size="12">LinkedIn + sheet</text>
+
+    <path d="M178 124 H206 M356 124 H384 M534 124 H562 M712 124 H740 M890 124 H918" stroke="#3D8BFF" stroke-width="2" fill="none"/>
+  </g>
+</svg>
