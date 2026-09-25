@@ -8,11 +8,19 @@ The sheet remembers every article. Monday-you does not.
 
 ## 🎬 Demo
 
-<video src="https://github.com/Rapid1234-star/n8n-Linkedin-blog-post/raw/main/demo.mp4" controls width="720"></video>
+https://github.com/user-attachments/assets/e77c42bf-bb3d-442a-bb7e-8e189ff8449c
 
 ## 🗺️ How it runs
 
-![One new article becomes one LinkedIn post](./flow.svg)
+Scroll sideways to follow the steps. Click the diagram to open it full size.
+
+<table>
+<tr>
+<td>
+<a href="./flow.svg"><img src="./flow.svg" alt="Horizontal flow from the blog feed to a LinkedIn post" width="1800"></a>
+</td>
+</tr>
+</table>
 
 1. **Read** the blog feed.
 2. **Skip** anything already in the Google Sheet.
@@ -68,14 +76,14 @@ The caption is written from the article, not from the company name.
 
 ## 🔑 API keys
 
-None of these keys are in the JSON file. Create them in each service, then attach them in n8n when the node asks for a credential.
+You create these in each service, then connect them in n8n when a node asks for a credential. The workflow file keeps the feed URL, the LinkedIn ids, the sheet id, and the Cloudflare account id. The keys stay in your n8n account.
 
-| Service | Create it here | Attach it in n8n |
+| Service | Where you get access | Where you attach it |
 | --- | --- | --- |
-| Groq | [console.groq.com](https://console.groq.com/keys) | Groq credential on both Groq chat models |
-| Gemini | [Google AI Studio](https://aistudio.google.com/apikey) | Gemini credential on both Gemini chat models |
-| Cloudflare | Cloudflare dashboard → API tokens | Header Auth on **Cloudflare Generate Image**. Header name `Authorization`, value `Bearer YOUR_CLOUDFLARE_API_TOKEN`. The token needs Workers AI. |
-| LinkedIn | A LinkedIn developer app, then the n8n LinkedIn credential | OAuth on the post and image upload nodes. This is a login, not a key pasted into the file. |
-| Google Sheets | The n8n Google Sheets credential | OAuth on the read and append nodes. The Google account must be able to edit the sheet. |
+| Groq | API key from [console.groq.com](https://console.groq.com/keys) | Groq credential on both Groq chat models |
+| Gemini | API key from [Google AI Studio](https://aistudio.google.com/apikey) | Gemini credential on both Gemini chat models |
+| Cloudflare | API token with Workers AI, from the Cloudflare dashboard | Header Auth on **Cloudflare Generate Image**. Header name `Authorization`, value `Bearer` plus the token |
+| LinkedIn | A LinkedIn developer app, then sign in through n8n | LinkedIn credential on the post and image upload nodes |
+| Google Sheets | Sign in through n8n with a Google account that can edit the sheet | Google Sheets credential on the read and append nodes |
 
-Ollama is optional. Leave it unconnected if you only use Groq and Gemini.
+Ollama is optional. Leave that credential empty if Groq and Gemini are enough.
